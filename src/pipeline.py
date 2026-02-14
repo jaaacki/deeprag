@@ -71,6 +71,9 @@ class Pipeline:
             if title and title[0] in ['-', ' ']:
                 title = title[1:].strip()
 
+        # Apply proper title casing (first letter of each word capitalized)
+        title = title.title()
+
         logger.info('Metadata: actress=%s, title=%s', actress, title)
 
         # Step 5: Build new filename
@@ -83,20 +86,41 @@ class Pipeline:
             new_path = move_file(file_path, destination_dir, actress, new_filename)
             logger.info('Success: %s -> %s', filename, new_path)
 
-            # Step 7: Trigger Emby library scan
+            # Step 7: Trigger Emby library scan and update metadata
             if self.emby_client and self.trigger_scan:
                 emby_config = self.config.get('emby', {})
                 library_id = emby_config.get('library_id', '')
 
+                # Trigger scan first
                 if library_id:
                     logger.info('Triggering Emby scan for library %s', library_id)
-                    success = self.emby_client.scan_library_by_id(library_id)
+                    scan_success = self.emby_client.scan_library_by_id(library_id)
                 else:
                     logger.info('Triggering Emby library scan')
-                    success = self.emby_client.trigger_library_scan()
+                    scan_success = self.emby_client.trigger_library_scan()
 
-                if not success:
-                    logger.warning('Emby scan failed but file was moved successfully')
+                if not scan_success:
+                    logger.error('Emby scan failed, skipping metadata update')
+                else:
+                    # Wait for Emby to process the file
+                    import time
+                    logger.info('Waiting 10 seconds for Emby to process the file...')
+                    time.sleep(10)
+
+                    # Find the item in Emby by path
+                    emby_item = self.emby_client.get_item_by_path(str(new_path))
+                    if emby_item:
+                        item_id = emby_item.get('Id')
+                        logger.info('Found Emby item %s, updating metadata', item_id)
+
+                        # Update metadata
+                        update_success = self.emby_client.update_item_metadata(item_id, metadata)
+                        if not update_success:
+                            logger.error('Failed to update Emby metadata for item %s', item_id)
+                        else:
+                            logger.info('Successfully updated Emby metadata for item %s', item_id)
+                    else:
+                        logger.error('Could not find Emby item for path: %s', new_path)
 
             return True
         except OSError as e:

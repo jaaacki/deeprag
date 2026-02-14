@@ -1,0 +1,23 @@
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Emby Tools')
+    .addItem('Get New Parent Folders', 'getParentFolders')
+    .addItem('Generate Preview', 'embyGeneratePreviewHook')
+    .addSeparator()
+    .addItem('Get New Items In Parent Folder','wrapperGetParentChildFoldersFast')
+    .addItem('Populate Items from Parent Folder', 'wrapperGetChildItems')
+    .addSeparator()
+    .addItem('Populate Item Details', 'populateItemDetailsFromStart')
+    .addItem('Populate Item Details (Reverse)', 'populateItemDetailsFromEnd')
+    .addSeparator()
+    .addItem('Populate MissAv Details', 'getMissAvData')
+    .addItem('Populate MissAv Details (Reverse)', 'getMissAvDataReverseOrder')
+    .addSeparator()
+    .addItem('Update Selected Items', 'updateEmbyItems')
+    .addItem('Update Selected Items (Reverse)', 'updateEmbyItemsReverse')
+    .addSeparator()
+    .addItem('Fetch MissAv Details (Bulk)', 'fetchMissAvDetails')
+    .addItem('Check File Exists', 'fetchMissAvDetailsCheckExist_V2')
+    .addItem('Get New Urls (Fetch)', 'scoutNewUrls')
+    .addToUi();
+}
