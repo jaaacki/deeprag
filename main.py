@@ -38,6 +38,7 @@ def load_config() -> dict:
         'emby': {
             'base_url': os.getenv('EMBY_BASE_URL', ''),
             'api_key': os.getenv('EMBY_API_KEY', ''),
+            'server_id': os.getenv('EMBY_SERVER_ID', ''),
             'library_id': os.getenv('EMBY_LIBRARY_ID', ''),
             'trigger_scan': os.getenv('EMBY_TRIGGER_SCAN', 'true').lower() == 'true',
         },

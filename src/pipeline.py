@@ -64,6 +64,13 @@ class Pipeline:
         # Proper-case actress name
         actress = actress.title()
 
+        # Strip movie code from title if it's already there (avoid duplication)
+        if title.upper().startswith(api_code.upper()):
+            title = title[len(api_code):].strip()
+            # Remove leading dash or space if present
+            if title and title[0] in ['-', ' ']:
+                title = title[1:].strip()
+
         logger.info('Metadata: actress=%s, title=%s', actress, title)
 
         # Step 5: Build new filename
