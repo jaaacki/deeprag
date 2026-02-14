@@ -90,10 +90,13 @@ class Pipeline:
 
                 if library_id:
                     logger.info('Triggering Emby scan for library %s', library_id)
-                    self.emby_client.scan_library_by_id(library_id)
+                    success = self.emby_client.scan_library_by_id(library_id)
                 else:
                     logger.info('Triggering Emby library scan')
-                    self.emby_client.trigger_library_scan()
+                    success = self.emby_client.trigger_library_scan()
+
+                if not success:
+                    logger.warning('Emby scan failed but file was moved successfully')
 
             return True
         except OSError as e:

@@ -37,11 +37,14 @@ class EmbyClient:
 
         try:
             resp = requests.post(url, headers=headers, params=params, timeout=10)
+            logger.info('Emby scan response: status=%s, body=%s', resp.status_code, resp.text[:200])
             resp.raise_for_status()
             logger.info('Emby library scan triggered successfully')
             return True
         except requests.RequestException as e:
-            logger.warning('Failed to trigger Emby library scan: %s', e)
+            logger.error('Failed to trigger Emby library scan: %s', e)
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error('Response status: %s, body: %s', e.response.status_code, e.response.text[:500])
             return False
 
     def get_libraries(self) -> list[dict] | None:
