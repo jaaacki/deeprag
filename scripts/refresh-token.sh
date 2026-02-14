@@ -21,9 +21,6 @@ fi
 
 REFRESH_TOKEN=$(cat "$REFRESH_TOKEN_FILE")
 
-# Get current access token from .env
-CURRENT_TOKEN=$(grep "^API_TOKEN=" "$ENV_FILE" | cut -d'=' -f2)
-
 # Docker command (use full path on Synology)
 DOCKER_CMD="/usr/local/bin/docker"
 
@@ -34,11 +31,10 @@ if ! $DOCKER_CMD ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
 fi
 
 # Request new access token from INSIDE the container (on Docker network)
-# api-bearer-auth requires Authorization header with current token
+# api-bearer-auth expects "token" parameter with refresh token value
 RESPONSE=$($DOCKER_CMD exec "$CONTAINER_NAME" curl -s -X POST "$WP_API_URL" \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $CURRENT_TOKEN" \
-    -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}")
+    -d "{\"token\":\"$REFRESH_TOKEN\"}")
 
 # Extract new access token
 NEW_ACCESS_TOKEN=$(echo "$RESPONSE" | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
