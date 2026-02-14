@@ -16,6 +16,7 @@ services:
       - ./.env:/app/.env:ro
     networks:
       - wpfamilyhub
+      - emby
     environment:
       - TZ=Asia/Singapore
     restart: unless-stopped
@@ -32,4 +33,7 @@ services:
 networks:
   wpfamilyhub:
     external: true
-    name: wpfamilyhubid_default
+    name: wpfamilyhubid_net
+  emby:
+    external: true
+    name: emby_default
