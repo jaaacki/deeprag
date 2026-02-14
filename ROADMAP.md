@@ -1,0 +1,45 @@
+# Roadmap
+
+## Phase 1 — Core Pipeline (v0.1.0)
+
+> Files dropped in the watch folder are automatically renamed with metadata and moved to actress-organized folders.
+
+- [x] Movie code extraction from filenames (#1)
+- [x] Subtitle language detection from filenames (#1)
+- [x] WP REST API metadata client with MissAV/JavGuru fallback (#2)
+- [x] Filename builder with sanitization and truncation (#3)
+- [x] Actress folder matching (case-insensitive) (#3)
+- [x] File watcher with stability check (#4)
+- [x] Pipeline orchestrator: extract → metadata → rename → move (#5)
+- [x] Error handling: missing code, API failure → errors/ folder (#5)
+- [x] Docker setup with volume mounts and shared network (#6)
+- [x] Unit tests for extractor and renamer (#7)
+
+## Phase 2 — Resilience & Observability (v0.2.0)
+
+> The pipeline handles edge cases gracefully and operators can monitor its health.
+
+- [ ] Structured logging with JSON output for Docker log drivers
+- [ ] Retry with exponential backoff for API failures
+- [ ] Health check endpoint or file for Docker health monitoring
+- [ ] Process existing files on startup (catch up after restart)
+- [ ] Duplicate detection (skip files already in destination)
+- [ ] Metrics: files processed, failed, API latency
+
+## Phase 3 — Emby Integration (v0.3.0)
+
+> Processed files are automatically registered in Emby with correct metadata.
+
+- [ ] Emby API client for library scan trigger
+- [ ] Metadata push to Emby (title, actress, genre, poster)
+- [ ] NFO file generation as fallback metadata source
+
+## Backlog
+
+_Unplaced items — will be assigned to a phase when priorities are clearer._
+
+- [ ] Web UI dashboard for processing status
+- [ ] Manual retry for files in errors/
+- [ ] Notification (webhook/Telegram) on processing success/failure
+- [ ] Multi-language subtitle priority configuration
+- [ ] Batch processing mode for existing libraries

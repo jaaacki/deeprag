@@ -1,0 +1,14 @@
+services:
+  emby-processor:
+    build: .
+    volumes:
+      - /volume3/docker/yt_dlp/downloads:/watch
+      - /volume2/system32/linux/systemd/jpv:/destination
+      - ./config.yaml:/app/config.yaml
+    networks:
+      - wpfamilyhubid_default
+    restart: unless-stopped
+
+networks:
+  wpfamilyhubid_default:
+    external: true
