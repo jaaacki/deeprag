@@ -1,14 +1,35 @@
+version: '3.8'
+
 services:
   emby-processor:
-    build: .
+    container_name: emby-processor
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: emby-processor:latest
     volumes:
+      # Watch directory (where new files appear)
       - /volume3/docker/yt_dlp/downloads:/watch
+      # Destination directory (organized library)
       - /volume2/system32/linux/systemd/jpv:/destination
-      - ./config.yaml:/app/config.yaml
+      # Environment configuration
+      - ./.env:/app/.env:ro
     networks:
-      - wpfamilyhubid_default
+      - wpfamilyhub
+    environment:
+      - TZ=Asia/Singapore
     restart: unless-stopped
+    labels:
+      - "com.emby.service=processor"
+      - "com.emby.description=Automated video file processing and organization"
+      - "com.emby.repository=https://github.com/jaaacki/emby-processor"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
-  wpfamilyhubid_default:
+  wpfamilyhub:
     external: true
+    name: wpfamilyhubid_default

@@ -4,6 +4,7 @@ import logging
 import shutil
 from pathlib import Path
 
+from .emby_client import EmbyClient
 from .extractor import extract_movie_code, detect_subtitle
 from .metadata import MetadataClient
 from .renamer import build_filename, move_file
@@ -14,10 +15,12 @@ logger = logging.getLogger(__name__)
 class Pipeline:
     """Process a video file: extract code, fetch metadata, rename, move."""
 
-    def __init__(self, config: dict, metadata_client: MetadataClient):
+    def __init__(self, config: dict, metadata_client: MetadataClient, emby_client: EmbyClient | None = None):
         self.config = config
         self.client = metadata_client
+        self.emby_client = emby_client
         self.error_dir = config.get('error_dir', '/watch/errors')
+        self.trigger_scan = config.get('emby', {}).get('trigger_scan', True)
 
     def process(self, file_path: str) -> bool:
         """Run the full pipeline on a single file.
@@ -72,6 +75,19 @@ class Pipeline:
         try:
             new_path = move_file(file_path, destination_dir, actress, new_filename)
             logger.info('Success: %s -> %s', filename, new_path)
+
+            # Step 7: Trigger Emby library scan
+            if self.emby_client and self.trigger_scan:
+                emby_config = self.config.get('emby', {})
+                library_id = emby_config.get('library_id', '')
+
+                if library_id:
+                    logger.info('Triggering Emby scan for library %s', library_id)
+                    self.emby_client.scan_library_by_id(library_id)
+                else:
+                    logger.info('Triggering Emby library scan')
+                    self.emby_client.trigger_library_scan()
+
             return True
         except OSError as e:
             logger.error('Failed to move %s: %s', filename, e)

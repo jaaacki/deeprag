@@ -1,6 +1,8 @@
 # Emby Processor
 
-Automated file processing pipeline that watches for new video files, fetches metadata from the [emby-service](../emby-helper/emby-service/) WordPress plugin, renames files with structured names, and organizes them into actress folders.
+[![GitHub](https://img.shields.io/badge/github-jaaacki%2Femby--processor-blue)](https://github.com/jaaacki/emby-processor)
+
+Automated file processing pipeline that watches for new video files, fetches metadata from the emby-service WordPress plugin, renames files with structured names, organizes them into actress folders, and triggers Emby library scans.
 
 ## What It Does
 
@@ -8,7 +10,8 @@ Automated file processing pipeline that watches for new video files, fetches met
 - Extracts movie code and subtitle language from the filename
 - Searches the WP REST API for metadata (actress, title, etc.)
 - Renames to: `{Actress} - [{Sub}] {MOVIE-CODE} {Title}.{ext}`
-- Moves to `{destination}/{Actress}/`
+- Moves to `{destination}/{Actress}/` (creates folder if needed, matches case-insensitively)
+- Triggers Emby server to scan and import the new file
 
 ### Example
 
@@ -21,44 +24,49 @@ Moved:  /destination/Ruri Saijo/
 ## Requirements
 
 - Docker and Docker Compose
-- The [emby-service](../emby-helper/emby-service/) WordPress plugin running on the same Docker network
+- The emby-service WordPress plugin running on the same Docker network
+- Emby server with API access
 - A watch directory where yt-dlp (or similar) drops files
 
 ## Setup
 
-### 1. Configure
+### 1. Configure Environment
 
-Edit `config.yaml`:
+Copy `.env.example` to `.env` and configure:
 
-```yaml
-watch_dir: /watch
-destination_dir: /destination
-error_dir: /watch/errors
-video_extensions: [.mp4, .mkv, .avi, .wmv]
-
-api:
-  base_url: http://wpfamilyhubid_nginx/wp-json/emby/v1
-  token: ""                          # JWT token if auth is required
-  search_order: [missav, javguru]    # MissAV first, JavGuru fallback
-
-stability:
-  check_interval_seconds: 5          # seconds between file size checks
-  min_stable_checks: 2               # consecutive identical sizes before processing
+```bash
+cp .env.example .env
+nano .env
 ```
 
-The `base_url` uses the Docker internal hostname. Adjust if your WP container has a different name.
+Key settings to update:
+
+```bash
+# WordPress REST API (use Docker internal hostname)
+API_BASE_URL=http://wpfamilyhubid_nginx/wp-json/emby/v1
+API_TOKEN=your-wordpress-api-token
+
+# Emby Server (use Docker internal hostname)
+# Find your Emby container: docker ps | grep -i emby
+EMBY_BASE_URL=http://emby:8096
+EMBY_API_KEY=your-emby-api-key
+```
+
+See `.env.example` for all available options.
 
 ### 2. Deploy
 
+For local development:
 ```bash
-cd emby-processor
 docker compose up -d
 ```
+
+For production deployment on Synology NAS, see [DEPLOY.md](DEPLOY.md) for detailed instructions.
 
 The `docker-compose.yml` mounts:
 - `/volume3/docker/yt_dlp/downloads` → `/watch` (input)
 - `/volume2/system32/linux/systemd/jpv` → `/destination` (output)
-- `./config.yaml` → `/app/config.yaml`
+- `./.env` → `/app/.env` (read-only configuration)
 
 ### 3. Verify
 
@@ -96,9 +104,12 @@ New file appears in /watch
   │
   ├─ Build filename: {Actress} - [{Sub}] {CODE} {Title}.{ext}
   │
-  └─ Move to /destination/{Actress}/
-      └─ Creates actress folder if needed
-      └─ Matches existing folders case-insensitively
+  ├─ Move to /destination/{Actress}/
+  │   └─ Creates actress folder if needed
+  │   └─ Matches existing folders case-insensitively
+  │
+  └─ Trigger Emby library scan
+      └─ Emby imports and matches metadata
 ```
 
 ## Error Handling
@@ -116,29 +127,35 @@ Check the error directory and logs to diagnose failures.
 
 ```bash
 cd emby-processor
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 pytest tests/ -v
 ```
+
+**Note**: Tests run in CI and locally. 45 tests covering extractor, renamer, and Emby client.
 
 ### Project structure
 
 ```
 emby-processor/
-├── main.py                  # Entry point: load config, start watcher
-├── config.yaml              # Configuration
+├── main.py                  # Entry point: load env, start watcher
+├── .env                     # Environment configuration (not tracked)
+├── .env.example             # Template for .env
 ├── src/
 │   ├── watcher.py           # watchdog folder monitor + stability check
 │   ├── extractor.py         # Movie code + subtitle detection
 │   ├── metadata.py          # WP REST API client
+│   ├── emby_client.py       # Emby server API client
 │   ├── renamer.py           # Filename builder + sanitizer + file move
 │   └── pipeline.py          # Orchestrates the full flow per file
 ├── tests/
 │   ├── test_extractor.py    # Extractor unit tests
-│   └── test_renamer.py      # Renamer unit tests
+│   ├── test_renamer.py      # Renamer unit tests
+│   └── test_emby_client.py  # Emby client unit tests
 ├── Dockerfile
 ├── docker-compose.yml
+├── DEPLOY.md                # Deployment guide for Synology NAS
 └── requirements.txt
 ```
 

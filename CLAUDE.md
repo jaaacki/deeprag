@@ -12,8 +12,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full component map and 
 
 ```
 emby-processor/
-├── main.py                     # Entry point: load config, start watcher
-├── config.yaml                 # All paths, URLs, tokens
+├── main.py                     # Entry point: load env vars, start watcher
+├── .env                        # Environment variables (not tracked)
+├── .env.example                # Template for .env
 ├── src/
 │   ├── watcher.py              # watchdog folder monitor + file stability check
 │   ├── extractor.py            # Movie code regex + subtitle keyword detection
@@ -25,7 +26,7 @@ emby-processor/
 │   └── test_renamer.py         # Renamer unit tests (12 tests)
 ├── Dockerfile                  # Python 3.12-slim
 ├── docker-compose.yml          # Service definition with volume mounts
-└── requirements.txt            # watchdog, requests, pyyaml, pytest
+└── requirements.txt            # watchdog, requests, python-dotenv, pytest
 ```
 
 ## Remote Server
@@ -38,11 +39,12 @@ emby-processor/
 ## Development Notes
 
 - Python 3.12 (Docker runtime)
-- Dependencies: watchdog, requests, pyyaml
+- Dependencies: watchdog, requests, python-dotenv
 - Testing: pytest
 - No framework — simple module structure with watchdog for file events
 - API base URL uses Docker internal hostname: `http://wpfamilyhubid_nginx/wp-json/emby/v1`
-- All config in `config.yaml` (no environment variables, no .env)
+- All config via environment variables in `.env` (not tracked in git)
+- `.env.example` provides template for required environment variables
 
 ## Workflow Rules
 
