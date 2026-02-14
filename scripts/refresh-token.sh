@@ -10,8 +10,8 @@ ENV_FILE="$PROJECT_DIR/.env"
 REFRESH_TOKEN_FILE="$PROJECT_DIR/.refresh_token"
 CONTAINER_NAME="emby-processor"
 
-# WordPress API endpoint (accessible from Docker network)
-WP_API_URL="http://wpfamilyhubid_nginx/wp-json/jwt-auth/v1/token/refresh"
+# WordPress API endpoint (api-bearer-auth plugin)
+WP_API_URL="http://wpfamilyhubid_nginx/wp-json/api-bearer-auth/v1/tokens/refresh"
 
 # Read refresh token
 if [ ! -f "$REFRESH_TOKEN_FILE" ]; then
