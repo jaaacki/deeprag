@@ -21,14 +21,17 @@ fi
 
 REFRESH_TOKEN=$(cat "$REFRESH_TOKEN_FILE")
 
+# Docker command (use full path on Synology)
+DOCKER_CMD="/usr/local/bin/docker"
+
 # Check if container is running
-if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+if ! $DOCKER_CMD ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     echo "Error: Container $CONTAINER_NAME is not running"
     exit 1
 fi
 
 # Request new access token from INSIDE the container (on Docker network)
-RESPONSE=$(docker exec "$CONTAINER_NAME" curl -s -X POST "$WP_API_URL" \
+RESPONSE=$($DOCKER_CMD exec "$CONTAINER_NAME" curl -s -X POST "$WP_API_URL" \
     -H "Content-Type: application/json" \
     -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}")
 
@@ -45,6 +48,6 @@ fi
 sed -i.bak "s|API_TOKEN=.*|API_TOKEN=$NEW_ACCESS_TOKEN|" "$ENV_FILE"
 
 # Restart container to load new token
-docker restart "$CONTAINER_NAME" > /dev/null 2>&1
+$DOCKER_CMD restart "$CONTAINER_NAME" > /dev/null 2>&1
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Token refreshed successfully"
