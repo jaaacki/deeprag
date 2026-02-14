@@ -9,3 +9,4 @@ __pycache__/
 
 # Environment and secrets
 .env
+.refresh_token
