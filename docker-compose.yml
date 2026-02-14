@@ -13,7 +13,9 @@ services:
       # Destination directory (organized library)
       - /volume2/system32/linux/systemd/jpv:/destination
       # Environment configuration
-      - ./.env:/app/.env:ro
+      - ./.env:/app/.env
+      # WordPress refresh token (for auto-refresh)
+      - ./.refresh_token:/app/.refresh_token:ro
     networks:
       - wpfamilyhub
       - emby

@@ -44,13 +44,21 @@ Key settings to update:
 ```bash
 # WordPress REST API (use Docker internal hostname)
 API_BASE_URL=http://wpfamilyhubid_nginx/wp-json/emby/v1
-API_TOKEN=your-wordpress-api-token
+API_TOKEN=your-wordpress-access-token  # JWT access token (expires in 24h)
 
 # Emby Server (use Docker internal hostname)
 # Find your Emby container: docker ps | grep -i emby
-EMBY_BASE_URL=http://emby:8096
+EMBY_BASE_URL=http://emby_server:8096
 EMBY_API_KEY=your-emby-api-key
 ```
+
+**Important**: Also create `.refresh_token` file with your WordPress refresh token:
+```bash
+echo "your-refresh-token-here" > .refresh_token
+chmod 600 .refresh_token
+```
+
+The container will automatically refresh the access token every 20 hours using the refresh token.
 
 See `.env.example` for all available options.
 
@@ -67,6 +75,18 @@ The `docker-compose.yml` mounts:
 - `/volume3/docker/yt_dlp/downloads` → `/watch` (input)
 - `/volume2/system32/linux/systemd/jpv` → `/destination` (output)
 - `./.env` → `/app/.env` (read-only configuration)
+- `./.refresh_token` → `/app/.refresh_token` (WordPress refresh token)
+
+### Automatic Token Refresh
+
+WordPress JWT tokens expire every 24 hours. The container automatically refreshes them:
+
+- **Cron job** runs inside container every 20 hours
+- Uses refresh token to get new access token
+- Updates `.env` file automatically
+- **No manual intervention needed** after initial setup
+
+See [scripts/README.md](scripts/README.md) for technical details.
 
 ### 3. Verify
 
