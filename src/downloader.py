@@ -1,20 +1,22 @@
-"""yt-dlp download manager using docker exec to trigger downloads."""
+"""yt-dlp download manager using docker exec to trigger downloads.
+
+Persists jobs to PostgreSQL via QueueDB. Keeps in-memory buffer only for
+active downloads (real-time output between DB flushes).
+"""
 
 import logging
 import os
 import subprocess
 import threading
 import time
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
-from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
 DOWNLOAD_TIMEOUT = 1800  # 30 minutes
-JOB_TTL = 86400  # 24 hours
+DB_FLUSH_INTERVAL = 5  # seconds between output_tail DB writes
 
 
 class DownloadStatus(str, Enum):
@@ -24,66 +26,91 @@ class DownloadStatus(str, Enum):
     FAILED = "failed"
 
 
-@dataclass
-class DownloadJob:
-    id: str
-    url: str
-    filename: Optional[str]
-    status: DownloadStatus = DownloadStatus.QUEUED
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
-    error: Optional[str] = None
-    output_tail: list = field(default_factory=list)
+def _row_to_dict(row: dict) -> dict:
+    """Convert a DB row to the API-friendly dict format."""
+    def _fmt(val):
+        if val is None:
+            return None
+        if isinstance(val, datetime):
+            return val.isoformat()
+        return val
 
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "url": self.url,
-            "filename": self.filename,
-            "status": self.status.value,
-            "created_at": self.created_at.isoformat(),
-            "started_at": self.started_at.isoformat() if self.started_at else None,
-            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
-            "error": self.error,
-            "output_tail": self.output_tail[-20:],
-        }
+    output_tail = row.get('output_tail') or []
+    return {
+        "id": row['id'],
+        "url": row['url'],
+        "filename": row.get('filename'),
+        "status": row['status'],
+        "created_at": _fmt(row.get('created_at')),
+        "started_at": _fmt(row.get('started_at')),
+        "finished_at": _fmt(row.get('finished_at')),
+        "error": row.get('error'),
+        "output_tail": output_tail[-20:] if output_tail else [],
+    }
 
 
 class DownloadManager:
-    def __init__(self):
-        self._jobs: dict[str, DownloadJob] = {}
+    def __init__(self, queue_db):
+        self._queue_db = queue_db
+        # In-memory buffer: only for active downloads (real-time output between DB flushes)
+        self._active_output: dict[int, list[str]] = {}
         self._lock = threading.Lock()
         self._container_name = os.getenv("YTDLP_CONTAINER_NAME", "ytdlp")
 
-    def submit(self, url: str, filename: Optional[str] = None) -> DownloadJob:
-        job = DownloadJob(id=str(uuid4())[:8], url=url, filename=filename)
-        with self._lock:
-            self._jobs[job.id] = job
-            self._cleanup_old_jobs()
+        # Recover stale jobs from previous container run
+        recovered = self._queue_db.recover_stale_downloads()
+        if recovered:
+            logger.info(f"[Download] Recovered {recovered} stale download jobs on startup")
 
-        thread = threading.Thread(target=self._run_download, args=(job,), daemon=True)
+    def submit(self, url: str, filename: Optional[str] = None) -> dict:
+        """Submit a download job. Returns the job dict with DB id."""
+        row = self._queue_db.add_download(url, filename)
+        job_id = row['id']
+
+        with self._lock:
+            self._active_output[job_id] = []
+
+        thread = threading.Thread(target=self._run_download, args=(job_id, url, filename), daemon=True)
         thread.start()
-        logger.info(f"[Download] Submitted job {job.id}: {url} (filename={filename})")
-        return job
+        logger.info(f"[Download] Submitted job {job_id}: {url} (filename={filename})")
+        return _row_to_dict(row)
 
-    def get_job(self, job_id: str) -> Optional[DownloadJob]:
-        return self._jobs.get(job_id)
-
-    def list_jobs(self, limit: int = 20) -> list[DownloadJob]:
+    def get_job(self, job_id: int) -> Optional[dict]:
+        """Get a download job by ID. Merges real-time output for active jobs."""
+        row = self._queue_db.get_download(job_id)
+        if not row:
+            return None
+        result = _row_to_dict(row)
+        # Overlay real-time output for active downloads
         with self._lock:
-            jobs = sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)
-        return jobs[:limit]
+            if job_id in self._active_output:
+                result['output_tail'] = self._active_output[job_id][-20:]
+        return result
 
-    def _run_download(self, job: DownloadJob):
-        job.status = DownloadStatus.DOWNLOADING
-        job.started_at = datetime.now(timezone.utc)
+    def list_jobs(self, limit: int = 20) -> list[dict]:
+        """List recent download jobs. Merges real-time output for active jobs."""
+        rows = self._queue_db.list_downloads(limit=limit)
+        results = []
+        with self._lock:
+            for row in rows:
+                result = _row_to_dict(row)
+                if row['id'] in self._active_output:
+                    result['output_tail'] = self._active_output[row['id']][-20:]
+                results.append(result)
+        return results
 
-        cmd = ["docker", "exec", self._container_name, "bash", "./scripts/downloadWithFileName.sh", job.url]
-        if job.filename:
-            cmd.append(job.filename)
+    def _run_download(self, job_id: int, url: str, filename: Optional[str]):
+        """Run the download in a background thread."""
+        now = datetime.now(timezone.utc)
+        self._queue_db.update_download_status(
+            job_id, status='downloading', started_at=now,
+        )
 
-        logger.info(f"[Download] Job {job.id} starting: {' '.join(cmd)}")
+        cmd = ["docker", "exec", self._container_name, "bash", "./scripts/downloadWithFileName.sh", url]
+        if filename:
+            cmd.append(filename)
+
+        logger.info(f"[Download] Job {job_id} starting: {' '.join(cmd)}")
 
         try:
             proc = subprocess.Popen(
@@ -94,15 +121,26 @@ class DownloadManager:
             )
 
             output_lines = []
+            last_flush = time.monotonic()
+
             for line in proc.stdout:
                 line = line.rstrip()
                 if line:
-                    logger.info(f"[Download:{job.id}] {line}")
+                    logger.info(f"[Download:{job_id}] {line}")
                 output_lines.append(line)
                 # Keep last 50 lines in memory
                 if len(output_lines) > 50:
                     output_lines.pop(0)
-                job.output_tail = output_lines.copy()
+
+                with self._lock:
+                    self._active_output[job_id] = output_lines.copy()
+
+                # Flush to DB periodically
+                if time.monotonic() - last_flush >= DB_FLUSH_INTERVAL:
+                    self._queue_db.update_download_status(
+                        job_id, output_tail=output_lines[-50:],
+                    )
+                    last_flush = time.monotonic()
 
             proc.wait(timeout=DOWNLOAD_TIMEOUT)
 
@@ -112,47 +150,58 @@ class DownloadManager:
             output_has_ok = any(l.strip().startswith("OK:") for l in output_lines)
 
             if proc.returncode == 0 or output_has_ok:
-                job.status = DownloadStatus.COMPLETED
                 if proc.returncode != 0:
-                    logger.info(f"[Download] Job {job.id} exit code {proc.returncode} but output contains OK — treating as success")
+                    logger.info(f"[Download] Job {job_id} exit code {proc.returncode} but output contains OK — treating as success")
                 else:
-                    logger.info(f"[Download] Job {job.id} completed successfully")
+                    logger.info(f"[Download] Job {job_id} completed successfully")
+                self._queue_db.update_download_status(
+                    job_id,
+                    status='completed',
+                    output_tail=output_lines[-50:],
+                    finished_at=datetime.now(timezone.utc),
+                )
             else:
-                job.status = DownloadStatus.FAILED
-                job.error = f"Exit code {proc.returncode}"
-                logger.warning(f"[Download] Job {job.id} failed with exit code {proc.returncode}")
+                error_msg = f"Exit code {proc.returncode}"
+                logger.warning(f"[Download] Job {job_id} failed with exit code {proc.returncode}")
+                self._queue_db.update_download_status(
+                    job_id,
+                    status='failed',
+                    error=error_msg,
+                    output_tail=output_lines[-50:],
+                    finished_at=datetime.now(timezone.utc),
+                )
 
         except subprocess.TimeoutExpired:
             proc.kill()
-            job.status = DownloadStatus.FAILED
-            job.error = f"Timed out after {DOWNLOAD_TIMEOUT}s"
-            logger.error(f"[Download] Job {job.id} timed out")
+            logger.error(f"[Download] Job {job_id} timed out")
+            self._queue_db.update_download_status(
+                job_id,
+                status='failed',
+                error=f"Timed out after {DOWNLOAD_TIMEOUT}s",
+                finished_at=datetime.now(timezone.utc),
+            )
         except Exception as e:
-            job.status = DownloadStatus.FAILED
-            job.error = str(e)
-            logger.exception(f"[Download] Job {job.id} error: {e}")
+            logger.exception(f"[Download] Job {job_id} error: {e}")
+            self._queue_db.update_download_status(
+                job_id,
+                status='failed',
+                error=str(e),
+                finished_at=datetime.now(timezone.utc),
+            )
         finally:
-            job.finished_at = datetime.now(timezone.utc)
-
-    def _cleanup_old_jobs(self):
-        now = time.time()
-        expired = [
-            jid for jid, job in self._jobs.items()
-            if (now - job.created_at.timestamp()) > JOB_TTL
-            and job.status in (DownloadStatus.COMPLETED, DownloadStatus.FAILED)
-        ]
-        for jid in expired:
-            del self._jobs[jid]
-        if expired:
-            logger.info(f"[Download] Cleaned up {len(expired)} old jobs")
+            # Remove from active buffer
+            with self._lock:
+                self._active_output.pop(job_id, None)
 
 
 # Singleton instance
 _manager: Optional[DownloadManager] = None
 
 
-def get_download_manager() -> DownloadManager:
+def get_download_manager(queue_db=None) -> DownloadManager:
     global _manager
     if _manager is None:
-        _manager = DownloadManager()
+        if queue_db is None:
+            raise RuntimeError("DownloadManager requires queue_db on first init")
+        _manager = DownloadManager(queue_db)
     return _manager

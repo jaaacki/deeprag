@@ -74,7 +74,11 @@ async def startup_event():
     log_buffer.setFormatter(formatter)
 
     # Initialize database
-    get_queue_db()
+    db = get_queue_db()
+
+    # Initialize download manager with DB access
+    from .downloader import get_download_manager
+    get_download_manager(queue_db=db)
 
     logger.info("=== FastAPI dashboard started ===")
     logger.info(f"Log buffer has {len(log_buffer.buffer)} entries")
@@ -810,7 +814,7 @@ async def delete_queue_item(item_id: int):
 
 @app.post("/api/cleanup")
 async def cleanup(older_than_days: int = Query(30, ge=1, le=365)):
-    """Delete completed items older than specified days."""
+    """Delete completed items older than specified days (queue + downloads)."""
     db = get_queue_db()
     conn = db._get_conn()
 
@@ -825,10 +829,14 @@ async def cleanup(older_than_days: int = Query(30, ge=1, le=365)):
             deleted_ids = [row[0] for row in cur.fetchall()]
             conn.commit()
 
+        # Also clean up old download jobs
+        dl_deleted = db.cleanup_old_downloads(older_than_days)
+
         return {
             "success": True,
-            "message": f"Deleted {len(deleted_ids)} completed items older than {older_than_days} days",
+            "message": f"Deleted {len(deleted_ids)} queue items and {dl_deleted} download jobs older than {older_than_days} days",
             "deleted_count": len(deleted_ids),
+            "downloads_deleted": dl_deleted,
         }
     except Exception:
         conn.rollback()
@@ -1002,12 +1010,12 @@ async def submit_download(
     manager = get_download_manager()
     job = manager.submit(url.strip(), filename.strip() or None)
 
-    logger.info(f"[API] Download submitted: job={job.id} url={url}")
+    logger.info(f"[API] Download submitted: job={job['id']} url={url}")
 
     return {
         "success": True,
-        "message": f"Download started (job {job.id})",
-        "job": job.to_dict(),
+        "message": f"Download started (job {job['id']})",
+        "job": job,
     }
 
 
@@ -1019,13 +1027,13 @@ async def list_downloads(limit: int = Query(20, ge=1, le=100)):
     manager = get_download_manager()
     jobs = manager.list_jobs(limit=limit)
     return {
-        "jobs": [j.to_dict() for j in jobs],
+        "jobs": jobs,
         "count": len(jobs),
     }
 
 
 @app.get("/api/downloads/{job_id}")
-async def get_download(job_id: str):
+async def get_download(job_id: int):
     """Get details for a specific download job."""
     from .downloader import get_download_manager
 
@@ -1033,7 +1041,7 @@ async def get_download(job_id: str):
     job = manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Download job not found")
-    return {"job": job.to_dict()}
+    return {"job": job}
 
 
 @app.get("/api/logs")

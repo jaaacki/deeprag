@@ -67,16 +67,19 @@ class QueueDB:
     # ------------------------------------------------------------------
 
     def initialize(self):
-        """Run the migration SQL to create/update the schema."""
-        migration_path = Path(__file__).parent.parent / 'migrations' / '001_create_queue.sql'
-        sql = migration_path.read_text()
+        """Run all migration SQL files to create/update the schema."""
+        migrations_dir = Path(__file__).parent.parent / 'migrations'
+        migration_files = sorted(migrations_dir.glob('*.sql'))
 
         conn = self._get_conn()
         try:
             with conn.cursor() as cur:
-                cur.execute(sql)
+                for migration_path in migration_files:
+                    sql = migration_path.read_text()
+                    cur.execute(sql)
+                    logger.info('Ran migration: %s', migration_path.name)
             conn.commit()
-            logger.info('Queue database schema initialized')
+            logger.info('Queue database schema initialized (%d migrations)', len(migration_files))
         except Exception:
             conn.rollback()
             raise
@@ -374,6 +377,157 @@ class QueueDB:
             if deleted:
                 logger.info('Deleted queue item %s', item_id)
             return deleted
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._put_conn(conn)
+
+    # ------------------------------------------------------------------
+    # Download job operations
+    # ------------------------------------------------------------------
+
+    def add_download(self, url: str, filename: Optional[str] = None) -> dict:
+        """Add a new download job. Returns the created row as a dict."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """INSERT INTO download_jobs (url, filename)
+                       VALUES (%s, %s)
+                       RETURNING *""",
+                    (url, filename),
+                )
+                row = cur.fetchone()
+            conn.commit()
+            logger.info('Download job added: id=%s url=%s', row['id'], url)
+            return dict(row)
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._put_conn(conn)
+
+    def get_download(self, download_id: int) -> Optional[dict]:
+        """Get a download job by ID."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute('SELECT * FROM download_jobs WHERE id = %s', (download_id,))
+                row = cur.fetchone()
+            return dict(row) if row else None
+        finally:
+            self._put_conn(conn)
+
+    def list_downloads(self, limit: int = 20) -> list[dict]:
+        """List recent download jobs, newest first."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """SELECT * FROM download_jobs
+                       ORDER BY created_at DESC
+                       LIMIT %s""",
+                    (limit,),
+                )
+                rows = cur.fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            self._put_conn(conn)
+
+    def update_download_status(self, download_id: int, *,
+                               status: Optional[str] = None,
+                               error: Optional[str] = None,
+                               output_tail: Optional[list] = None,
+                               started_at: Optional[datetime] = None,
+                               finished_at: Optional[datetime] = None) -> Optional[dict]:
+        """Update a download job's status and fields. Returns updated row."""
+        fields = []
+        values = []
+
+        if status is not None:
+            fields.append('status = %s')
+            values.append(status)
+        if error is not None:
+            fields.append('error = %s')
+            values.append(error)
+        if output_tail is not None:
+            fields.append('output_tail = %s')
+            values.append(json.dumps(output_tail))
+        if started_at is not None:
+            fields.append('started_at = %s')
+            values.append(started_at)
+        if finished_at is not None:
+            fields.append('finished_at = %s')
+            values.append(finished_at)
+
+        if not fields:
+            return self.get_download(download_id)
+
+        values.append(download_id)
+
+        conn = self._get_conn()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    f"""UPDATE download_jobs
+                        SET {', '.join(fields)}
+                        WHERE id = %s
+                        RETURNING *""",
+                    values,
+                )
+                row = cur.fetchone()
+            conn.commit()
+            if row:
+                return dict(row)
+            return None
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._put_conn(conn)
+
+    def cleanup_old_downloads(self, older_than_days: int = 30) -> int:
+        """Delete completed/failed downloads older than N days. Returns count deleted."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """DELETE FROM download_jobs
+                       WHERE status IN ('completed', 'failed')
+                         AND created_at < NOW() - INTERVAL '1 day' * %s
+                       RETURNING id""",
+                    (older_than_days,),
+                )
+                deleted = cur.rowcount
+            conn.commit()
+            if deleted:
+                logger.info('Cleaned up %d old download jobs', deleted)
+            return deleted
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._put_conn(conn)
+
+    def recover_stale_downloads(self) -> int:
+        """Mark any 'downloading' jobs as 'failed' (stale from container restart).
+        Returns count of recovered jobs."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE download_jobs
+                       SET status = 'failed',
+                           error = 'Container restarted during download',
+                           finished_at = NOW()
+                       WHERE status IN ('queued', 'downloading')""",
+                )
+                recovered = cur.rowcount
+            conn.commit()
+            if recovered:
+                logger.info('Recovered %d stale download jobs', recovered)
+            return recovered
         except Exception:
             conn.rollback()
             raise
