@@ -5,47 +5,40 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# Endpoint paths per source
-SEARCH_ENDPOINTS = {
-    'missav': '/missav/search',
-    'javguru': '/javguru/search',
-}
+# Unified search endpoint (backend handles provider selection)
+UNIFIED_SEARCH_ENDPOINT = '/emby/v1/search'
 
 
 class MetadataClient:
     """Client for the emby-service WP REST API."""
 
     def __init__(self, base_url: str, token: str = '', search_order: list[str] | None = None):
+        """Initialize metadata client.
+
+        Args:
+            base_url: WordPress API base URL
+            token: Authorization token
+            search_order: DEPRECATED - no longer used, backend handles provider selection
+        """
         self.base_url = base_url.rstrip('/')
         self.token = token
-        self.search_order = search_order or ['missav', 'javguru']
+        # search_order kept for backwards compatibility but not used
+        if search_order:
+            logger.info('search_order parameter is deprecated - unified search handles provider selection')
 
     def search(self, movie_code: str) -> dict | None:
-        """Search for movie metadata across configured sources.
+        """Search for movie metadata using unified endpoint.
 
-        Tries each source in search_order. Returns the first successful
-        result's data dict, or None if all sources fail.
+        The backend handles provider fallback logic (missav → javguru).
+        Returns metadata dict on success, None on failure.
         """
-        for source in self.search_order:
-            endpoint = SEARCH_ENDPOINTS.get(source)
-            if not endpoint:
-                logger.warning('Unknown search source: %s', source)
-                continue
-
-            url = f'{self.base_url}{endpoint}'
-            result = self._post_search(url, movie_code, source)
-            if result is not None:
-                return result
-
-        return None
-
-    def _post_search(self, url: str, movie_code: str, source: str) -> dict | None:
-        """POST a search request and return data dict on success."""
+        url = f'{self.base_url}{UNIFIED_SEARCH_ENDPOINT}'
         headers = {'Content-Type': 'application/json'}
         if self.token:
             headers['Authorization'] = f'Bearer {self.token}'
 
         try:
+            logger.info('Searching metadata for %s via unified endpoint', movie_code)
             resp = requests.post(
                 url,
                 json={'moviecode': movie_code},
@@ -56,12 +49,13 @@ class MetadataClient:
             body = resp.json()
 
             if body.get('success') and body.get('data'):
-                logger.info('Found metadata for %s via %s', movie_code, source)
+                source = body.get('source', 'unknown')
+                logger.info('Found metadata for %s via %s (unified search)', movie_code, source)
                 return body['data']
 
-            logger.info('No result for %s via %s', movie_code, source)
+            logger.info('No metadata found for %s (unified search)', movie_code)
             return None
 
         except requests.RequestException as e:
-            logger.warning('API request failed for %s via %s: %s', movie_code, source, e)
+            logger.warning('Unified search failed for %s: %s', movie_code, e)
             return None

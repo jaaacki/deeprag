@@ -110,6 +110,9 @@
                 <button class="btn btn-outline-secondary" onclick="toggleLogs()">
                     <i class="bi bi-terminal"></i> Toggle Logs
                 </button>
+                <button class="btn btn-outline-info" onclick="bulkRefreshMetadata()">
+                    <i class="bi bi-cloud-download"></i> Bulk Refresh Metadata
+                </button>
                 <button class="btn btn-outline-danger" onclick="triggerCleanup()">
                     <i class="bi bi-trash"></i> Cleanup Old Items
                 </button>
@@ -392,6 +395,61 @@
         // Reprocess metadata (deprecated - use runAction instead)
         async function reprocessMetadata(itemId) {
             return runAction(itemId, 'update-emby', null);
+        }
+
+        // Bulk refresh metadata for all completed items
+        async function bulkRefreshMetadata() {
+            const updateEmby = confirm(
+                'Refresh metadata for all completed items using NEW unified search?\n\n' +
+                'This will:\n' +
+                '• Re-fetch metadata from WordPress (unified /emby/v1/search)\n' +
+                '• NOT move files - only update metadata\n' +
+                '• Update Emby with new metadata (if you click OK)\n\n' +
+                'Click OK to update Emby, Cancel to skip Emby update'
+            );
+
+            if (updateEmby === null) return; // User cancelled the first dialog
+
+            const confirmText = updateEmby
+                ? 'Refresh metadata AND update Emby for all completed items?'
+                : 'Refresh metadata (skip Emby update) for all completed items?';
+
+            if (!confirm(confirmText)) {
+                showToast('Bulk refresh cancelled', 'info');
+                return;
+            }
+
+            showToast('Starting bulk metadata refresh... (check logs)', 'info');
+
+            try {
+                const response = await fetch(
+                    `${API_BASE}/api/bulk/refresh-metadata?status=completed&update_emby=${updateEmby}`,
+                    { method: 'POST' }
+                );
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Bulk refresh failed');
+                }
+
+                const result = await response.json();
+
+                if (result.failed > 0) {
+                    showToast(
+                        `Refreshed ${result.updated}/${result.total} items (${result.failed} failed - check logs)`,
+                        'warning'
+                    );
+                } else {
+                    showToast(
+                        `Successfully refreshed ${result.updated}/${result.total} items`,
+                        'success'
+                    );
+                }
+
+                setTimeout(() => refreshData(), 1000);
+            } catch (error) {
+                showToast(`Error: ${error.message}`, 'error');
+            }
         }
 
         // Cleanup old items

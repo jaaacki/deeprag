@@ -645,6 +645,124 @@ async def cleanup(older_than_days: int = Query(30, ge=1, le=365)):
         db._put_conn(conn)
 
 
+@app.post("/api/bulk/refresh-metadata")
+async def bulk_refresh_metadata(
+    status: Optional[str] = Query(None, description="Filter by status (default: completed)"),
+    update_emby: bool = Query(True, description="Also update Emby metadata"),
+):
+    """Bulk re-fetch metadata for items using unified search endpoint.
+
+    This uses the new /emby/v1/search unified endpoint which handles
+    provider selection (missav → javguru) on the backend.
+
+    Does NOT move files - only updates metadata_json and optionally Emby.
+    """
+    from .metadata import MetadataClient
+
+    logger.info("[API Bulk] Bulk metadata refresh started")
+    db = get_queue_db()
+    conn = db._get_conn()
+
+    # Default to completed items if no status specified
+    filter_status = status or 'completed'
+
+    try:
+        # Get items to refresh
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, movie_code, new_path, emby_item_id
+                FROM processing_queue
+                WHERE status = %s AND movie_code IS NOT NULL
+                ORDER BY id ASC
+            """, (filter_status,))
+            items = cur.fetchall()
+
+        if not items:
+            logger.info("[API Bulk] No items found with status: %s", filter_status)
+            return {
+                "success": True,
+                "message": f"No items found with status: {filter_status}",
+                "total": 0,
+                "updated": 0,
+                "failed": 0,
+            }
+
+        logger.info(f"[API Bulk] Found {len(items)} items to refresh")
+
+        # Initialize metadata client with unified search
+        api_config = {
+            'base_url': os.getenv('API_BASE_URL', ''),
+            'token': os.getenv('API_TOKEN', ''),
+        }
+        metadata_client = MetadataClient(
+            base_url=api_config['base_url'],
+            token=api_config['token'],
+        )
+
+        updated_count = 0
+        failed_count = 0
+        failed_items = []
+
+        for item_id, movie_code, new_path, emby_item_id in items:
+            try:
+                logger.info(f"[API Bulk] Refreshing metadata for item {item_id}: {movie_code}")
+
+                # Fetch metadata using unified search
+                metadata = metadata_client.search(movie_code)
+                if not metadata:
+                    logger.warning(f"[API Bulk] No metadata found for {movie_code} (item {item_id})")
+                    failed_count += 1
+                    failed_items.append({"id": item_id, "code": movie_code, "reason": "No metadata found"})
+                    continue
+
+                # Update metadata_json in database
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        UPDATE processing_queue
+                        SET metadata_json = %s, updated_at = NOW()
+                        WHERE id = %s
+                    """, (json.dumps(metadata), item_id))
+                    conn.commit()
+
+                # Update Emby if requested and item has emby_item_id
+                if update_emby and emby_item_id:
+                    # Set status to 'moved' to trigger EmbyUpdater worker
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            UPDATE processing_queue
+                            SET status = 'moved', updated_at = NOW()
+                            WHERE id = %s
+                        """, (item_id,))
+                        conn.commit()
+                    logger.info(f"[API Bulk] Item {item_id} set to 'moved' for Emby update")
+
+                updated_count += 1
+                logger.info(f"[API Bulk] Successfully updated item {item_id}")
+
+            except Exception as e:
+                logger.exception(f"[API Bulk] Failed to refresh item {item_id}")
+                failed_count += 1
+                failed_items.append({"id": item_id, "code": movie_code, "reason": str(e)})
+                conn.rollback()
+
+        logger.info(f"[API Bulk] Completed: {updated_count} updated, {failed_count} failed")
+
+        return {
+            "success": True,
+            "message": f"Refreshed {updated_count}/{len(items)} items",
+            "total": len(items),
+            "updated": updated_count,
+            "failed": failed_count,
+            "failed_items": failed_items[:10],  # Return first 10 failures
+        }
+
+    except Exception as e:
+        logger.exception("[API Bulk] Bulk refresh failed")
+        raise HTTPException(status_code=500, detail=f"Bulk refresh failed: {str(e)}")
+    finally:
+        db._put_conn(conn)
+
+
 @app.get("/api/logs")
 async def get_logs(lines: int = Query(100, ge=1, le=1000)):
     """Get recent log lines from in-memory buffer."""
