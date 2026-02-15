@@ -1044,14 +1044,19 @@ async def submit_download(
 
 
 @app.get("/api/downloads")
-async def list_downloads(limit: int = Query(20, ge=1, le=100)):
-    """List recent download jobs."""
+async def list_downloads(
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    status: Optional[str] = Query(None, description="Filter by status"),
+):
+    """List recent download jobs with pagination and optional status filter."""
     from .downloader import get_download_manager
 
     manager = get_download_manager()
-    jobs = manager.list_jobs(limit=limit)
+    jobs, total = manager.list_jobs(limit=limit, offset=offset, status=status)
     return {
         "jobs": jobs,
+        "total": total,
         "count": len(jobs),
     }
 

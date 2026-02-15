@@ -87,9 +87,9 @@ class DownloadManager:
                 result['output_tail'] = self._active_output[job_id][-20:]
         return result
 
-    def list_jobs(self, limit: int = 20) -> list[dict]:
-        """List recent download jobs. Merges real-time output for active jobs."""
-        rows = self._queue_db.list_downloads(limit=limit)
+    def list_jobs(self, limit: int = 10, offset: int = 0, status: str = None) -> tuple[list[dict], int]:
+        """List recent download jobs with pagination. Returns (jobs, total_count)."""
+        rows, total = self._queue_db.list_downloads(limit=limit, offset=offset, status=status)
         results = []
         with self._lock:
             for row in rows:
@@ -97,7 +97,7 @@ class DownloadManager:
                 if row['id'] in self._active_output:
                     result['output_tail'] = self._active_output[row['id']][-20:]
                 results.append(result)
-        return results
+        return results, total
 
     def _run_download(self, job_id: int, url: str, filename: Optional[str]):
         """Run the download in a background thread."""

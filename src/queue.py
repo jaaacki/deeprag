@@ -434,19 +434,32 @@ class QueueDB:
         finally:
             self._put_conn(conn)
 
-    def list_downloads(self, limit: int = 20) -> list[dict]:
-        """List recent download jobs, newest first."""
+    def list_downloads(self, limit: int = 10, offset: int = 0,
+                       status: Optional[str] = None) -> tuple[list[dict], int]:
+        """List recent download jobs with pagination. Returns (rows, total_count)."""
         conn = self._get_conn()
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                where = ''
+                params = []
+                if status:
+                    where = 'WHERE status = %s'
+                    params.append(status)
+
                 cur.execute(
-                    """SELECT * FROM download_jobs
-                       ORDER BY created_at DESC
-                       LIMIT %s""",
-                    (limit,),
+                    f'SELECT COUNT(*) as cnt FROM download_jobs {where}',
+                    params,
+                )
+                total = cur.fetchone()['cnt']
+
+                cur.execute(
+                    f"""SELECT * FROM download_jobs {where}
+                        ORDER BY created_at DESC
+                        LIMIT %s OFFSET %s""",
+                    params + [limit, offset],
                 )
                 rows = cur.fetchall()
-            return [dict(r) for r in rows]
+            return [dict(r) for r in rows], total
         finally:
             self._put_conn(conn)
 
