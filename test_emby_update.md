@@ -38,6 +38,18 @@ Verify the Python `EmbyClient` correctly updates Emby item metadata from WordPre
 | 16 | Verify Language | Check `.PreferredMetadataLanguage` | "en" | ⬜ | Hardcoded value |
 | 17 | Verify Country | Check `.PreferredMetadataCountryCode` | "JP" | ⬜ | Hardcoded value |
 
+### Image Upload Tests (Phase 3 - Not Yet Implemented)
+
+| # | Test Case | Method | Expected Result | Status | Notes |
+|---|-----------|--------|-----------------|--------|-------|
+| 18 | Fetch image URL | Extract from metadata | URL from WordPress | ⬜ | From `image_cropped` or `raw_image_url` |
+| 19 | Download image | HTTP GET image URL | Binary image data | ⬜ | Handle redirects, validate MIME type |
+| 20 | Delete existing images | `DELETE /Items/{id}/Images/{type}/{index}` | HTTP 204 | ⬜ | Clean slate before upload |
+| 21 | Upload Primary image | `POST /Items/{id}/Images/Primary` | HTTP 204 | ⬜ | Original aspect ratio |
+| 22 | Upload Backdrop image | `POST /Items/{id}/Images/Backdrop` | HTTP 204 | ⬜ | W800 variant |
+| 23 | Upload Banner image | `POST /Items/{id}/Images/Banner` | HTTP 204 | ⬜ | W800 variant |
+| 24 | Verify images visible | Check Emby web UI | Images display correctly | ⬜ | Manual verification |
+
 ## Mock Metadata Structure
 
 ```python

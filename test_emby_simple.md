@@ -26,6 +26,18 @@ Verify Emby API endpoints are accessible and responding correctly using curl com
 | 7 | Verify update applied | `curl -s 'https://emby.familyhub.id/Items/{ITEM_ID}' -H 'X-Emby-Token: {API_KEY}' \| jq '.OriginalTitle, .LockData'` | Shows updated values | ⬜ | Confirms metadata persisted |
 | 8 | Check LockData flag | Verify `.LockData` is `true` | `true` | ⬜ | Prevents Emby from overwriting |
 
+### Image Upload Tests (Phase 3 - Not Yet Implemented)
+
+| # | Test Case | Command | Expected Result | Status | Notes |
+|---|-----------|---------|-----------------|--------|-------|
+| 9 | Delete existing Primary | `curl -X DELETE '{EMBY_URL}/Items/{ITEM_ID}/Images/Primary/0' -H 'X-Emby-Token: {API_KEY}'` | HTTP 204 | ⬜ | Clean before upload |
+| 10 | Delete existing Backdrop | `curl -X DELETE '{EMBY_URL}/Items/{ITEM_ID}/Images/Backdrop/0' -H 'X-Emby-Token: {API_KEY}'` | HTTP 204 | ⬜ | May have multiple |
+| 11 | Delete existing Banner | `curl -X DELETE '{EMBY_URL}/Items/{ITEM_ID}/Images/Banner/0' -H 'X-Emby-Token: {API_KEY}'` | HTTP 204 | ⬜ | Optional image type |
+| 12 | Upload Primary image | `curl -X POST '{EMBY_URL}/Items/{ITEM_ID}/Images/Primary?api_key={API_KEY}' -H 'Content-Type: image/jpeg' --data-binary @image.jpg` | HTTP 204 or 200 | ⬜ | Binary upload |
+| 13 | Upload Backdrop image | `curl -X POST '{EMBY_URL}/Items/{ITEM_ID}/Images/Backdrop?api_key={API_KEY}' -H 'Content-Type: image/jpeg' --data-binary @image_w800.jpg` | HTTP 204 or 200 | ⬜ | W800 variant |
+| 14 | Upload Banner image | `curl -X POST '{EMBY_URL}/Items/{ITEM_ID}/Images/Banner?api_key={API_KEY}' -H 'Content-Type: image/jpeg' --data-binary @image_w800.jpg` | HTTP 204 or 200 | ⬜ | W800 variant |
+| 15 | Verify images via API | `curl -s '{EMBY_URL}/Items/{ITEM_ID}' -H 'X-Emby-Token: {API_KEY}' \| jq '.ImageTags'` | Has Primary, Backdrop, Banner | ⬜ | Image tags present |
+
 ## Passing Criteria
 
 ### Required (Must Pass)

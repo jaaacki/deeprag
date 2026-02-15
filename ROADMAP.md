@@ -33,8 +33,46 @@
 - [x] Emby API client for library scan trigger (#8)
 - [x] Metadata push to Emby (title, actress, genre, studios) (#8)
 - [x] LockData flag to prevent Emby from overwriting metadata (#8)
-- [ ] Image upload to Emby (Primary, Backdrop, Banner)
+- [ ] Image upload to Emby (Primary, Backdrop, Banner) from WordPress
+- [ ] Image deletion before upload (clean slate for new images)
 - [ ] NFO file generation as fallback metadata source
+
+## Phase 4 — Production Features (v0.4.0)
+
+> Essential features for production reliability and completeness.
+
+- [ ] State tracking: SQLite database for processed items (#9)
+  - Track: file_path, movie_code, emby_item_id, status, error_message, processed_at
+  - Enable retries for failed items
+  - Prevent re-processing
+- [ ] Batch mode: Process entire existing Emby library (#10)
+  - CLI command: `python main.py --batch`
+  - Query Emby for all items (ParentId from EMBY_PARENT_FOLDER_ID)
+  - Extract movie codes from file paths
+  - Search WordPress and update metadata
+- [ ] Actress alias mapping (#11)
+  - YAML config file: canonical name → [aliases]
+  - Handle romanization variations (Saijo vs Saijou)
+  - Fuzzy matching for auto-suggestions
+- [ ] Error retry logic with exponential backoff (#12)
+  - Automatic retry for API failures
+  - Max retries configurable
+
+## Phase 5 — Advanced Integration (v0.5.0)
+
+> Deep integration with Emby workflow and proactive features.
+
+- [ ] Emby webhook receiver (#13)
+  - Flask/FastAPI HTTP server
+  - Handle library.new, library.deleted events
+  - Process items added outside watch directory
+  - Sync deletions to state database
+- [ ] WordPress details endpoint integration (#14)
+  - Use /missavdetails/ for URL-based metadata lookup
+  - Fallback when search by code fails
+- [ ] Scout mode for proactive content discovery (#15)
+  - Use /missavscout endpoint
+  - Queue URLs for download
 
 ## Backlog
 

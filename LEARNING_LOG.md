@@ -80,3 +80,76 @@ If Emby's own metadata agents (TheMovieDB, etc.) run before our `update_item_met
 3. Emby hasn't renamed or moved the file internally
 
 If the item isn't found, the pipeline logs an error but doesn't retry. The file is successfully moved, but metadata is missing in Emby. Phase 2 should add retry logic with exponential backoff for `get_item_by_path()`, or fall back to searching by filename if path search fails.
+
+## 2026-02-15 — Gap Analysis vs Google Script Legacy
+
+### Why this matters — Understanding the legacy requirements
+
+Analyzed the complete `googlescript_legacy/` implementation to identify gaps. The legacy system is fundamentally different:
+- **Architecture**: Webhook-driven batch processor using Google Sheets as a database
+- **Scope**: Processes entire existing Emby library + responds to Emby webhooks
+- **Features**: Image upload, state tracking, actress aliases, scout mode
+
+The Python implementation is a **file-watcher pipeline** that only processes new files as they arrive. This is intentional for the initial release, but several production features are missing.
+
+### Critical gaps identified
+
+**1. Image Upload** (High Priority)
+- Legacy downloads images from WordPress (`image_cropped`, `raw_image_url`)
+- Converts to base64 or binary
+- Deletes existing images: `DELETE /Items/{id}/Images/{type}/{index}`
+- Uploads 3 types: Primary (original), Backdrop (W800), Banner (W800)
+- Uses `POST /Items/{id}/Images/{type}?api_key={key}` with binary payload
+- **Impact**: Videos have no poster images in Emby, visually incomplete library
+
+**2. State Tracking** (High Priority)
+- Legacy uses Google Sheets to track every item: Id, MovieCode, missAv_status, Processed (checkbox), error messages
+- Benefits: See processing status, retry failed items, avoid re-processing, audit trail
+- Python is stateless: no memory between runs, errors lost in logs, can't resume
+- **Impact**: No visibility, no retries, potential re-processing
+
+**3. Batch Mode** (High Priority)
+- Legacy can process entire library: `getParentFolders()` → `getParentChildFolders()` → `populateItemDetails()` → `getMissAvData()` → `updateEmbyItems()`
+- Queries Emby for all items under ParentId=4 (root library folder)
+- Python only handles new files
+- **Impact**: Can't fix existing library, can't re-process after API improvements
+
+**4. Emby Webhooks** (Medium Priority)
+- Legacy receives `library.new` and `library.deleted` webhooks from Emby
+- Processes items added outside watch directory (manual imports, batch scans)
+- Syncs deletions to Google Sheets
+- **Impact**: Limited to watched directory, can't respond to Emby events
+
+**5. Actress Alias Mapping** (Medium Priority)
+- Legacy has `actressAlias` sheet for romanization variations (Saijo vs Saijou, Yua Mikami vs Mikami Yua)
+- Python creates duplicate folders for different spellings
+- **Impact**: Inconsistent organization, multiple folders per actress
+
+### What we learned — WordPress API endpoints
+
+Legacy uses additional endpoints:
+- `/wp-json/emby/v1/missavdetails/` — Get metadata by URL (not movie code)
+- `/wp-json/emby/v1/missavscout` — Scout URLs for new content to download
+
+Python only uses `/missavsearch/` and `/javguru/search`.
+
+### What we learned — Image upload implementation details
+
+From `googlescript_legacy/items.js` lines 371-388:
+1. Delete existing images (Primary, Backdrop, Banner, Logo) — clean slate
+2. Convert image URL to base64: `Util.convertBase64FromUrl(url)`
+3. For Backdrop/Banner: resize to W800: `Util.convertBase64FromUrlW800(url)`
+4. Upload with `POST /Items/{id}/Images/{type}?api_key={key}`
+5. Content-Type: `image/jpeg` or detect from source
+6. Payload: clean base64 string (strip data URI prefix, remove whitespace)
+
+Critical: Use `?api_key={key}` in URL, not X-Emby-Token header, for image uploads.
+
+### Priority recommendation
+
+Based on gap analysis (see `GAP_ANALYSIS.md`):
+1. **Phase 3 completion**: Image upload (2-3 days)
+2. **Phase 4**: State tracking (3-4 days), Batch mode (4-5 days)
+3. **Phase 5**: Emby webhooks (5-7 days), Actress aliases (1-2 days)
+
+The file-watcher pipeline is a solid v0.1, but needs image upload + state tracking for production readiness.
