@@ -59,22 +59,36 @@ def get_queue_db() -> QueueDB:
 @app.on_event("startup")
 async def startup_event():
     """Initialize database connection on startup."""
-    # Configure logging for the API process
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        force=True,  # Override existing config
+    # Get root logger and configure it
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # Remove existing handlers to avoid duplicates
+    root_logger.handlers.clear()
+
+    # Add console handler with our format
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
 
     # Initialize log buffer to capture API logs
     log_buffer = get_log_buffer()
 
+    # Verify log buffer is attached to root logger
+    if log_buffer not in root_logger.handlers:
+        root_logger.addHandler(log_buffer)
+
     # Initialize database
     get_queue_db()
 
-    logger.info("FastAPI dashboard started with logging configured")
-    logger.info(f"Log buffer initialized with {len(log_buffer.buffer)} entries")
+    logger.info("=== FastAPI dashboard started ===")
+    logger.info(f"Log buffer active with {len(log_buffer.buffer)} entries")
+    logger.info(f"Root logger has {len(root_logger.handlers)} handlers")
 
 
 @app.on_event("shutdown")
