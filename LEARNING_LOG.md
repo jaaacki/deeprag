@@ -153,3 +153,82 @@ Based on gap analysis (see `GAP_ANALYSIS.md`):
 3. **Phase 5**: Emby webhooks (5-7 days), Actress aliases (1-2 days)
 
 The file-watcher pipeline is a solid v0.1, but needs image upload + state tracking for production readiness.
+
+## 2026-02-15 — Phase 4: Queue Database, Workers, and Image Upload
+
+### Why this design — PostgreSQL with FOR UPDATE SKIP LOCKED
+
+The queue database uses PostgreSQL with `FOR UPDATE SKIP LOCKED` instead of SQLite for three critical reasons:
+
+1. **Concurrent worker safety**: Multiple worker processes claim items atomically without locking entire tables. SQLite's row-level locking with `BEGIN IMMEDIATE` would serialize all workers.
+2. **Connection pooling**: `ThreadedConnectionPool` maintains 1-5 connections for workers to share. SQLite requires exclusive file locks per connection.
+3. **JSONB for metadata**: Native JSON storage and indexing. SQLite would require TEXT serialization with no query support.
+
+The `FOR UPDATE SKIP LOCKED` pattern:
+```sql
+SELECT * FROM processing_queue
+WHERE status = 'pending'
+ORDER BY created_at
+LIMIT 1
+FOR UPDATE SKIP LOCKED
+```
+Worker 1 locks row 5, Worker 2 skips it and takes row 6 — zero contention, zero blocking. This is impossible with SQLite's file-level locks.
+
+### What just happened — Worker architecture decouples file and Emby operations
+
+Three worker processes run in parallel:
+- **FileProcessorWorker**: pending → processing → moved (file operations only)
+- **EmbyUpdaterWorker**: moved → emby_pending → completed (Emby operations only)
+- **RetryHandler**: error → pending (retry logic with exponential backoff)
+
+Key insight: Separating file and Emby operations into independent workers prevents Emby API slowness from blocking file moves. The queue acts as a buffer — files can be moved immediately while Emby operations catch up asynchronously.
+
+Benefits:
+- File moves never wait for Emby scans or metadata updates
+- Emby failures don't block new files from being processed
+- Each worker can be scaled independently (run 2 FileProcessors, 1 EmbyUpdater)
+- Retry logic is isolated and doesn't interfere with new files
+
+### What just happened — Exponential backoff retry polling for Emby item lookup
+
+The fixed 10-second sleep after triggering an Emby scan was unreliable — sometimes too short, sometimes too long. The new retry polling with exponential backoff (2s, 4s, 8s, 16s, 32s, 64s) adapts to Emby's actual indexing speed:
+
+- Fast storage: finds item in 2-4s (first 1-2 retries)
+- Slow storage or large libraries: uses full backoff up to 64s
+- Total max wait: ~126s before giving up (was 10s fixed)
+
+Implementation: `EmbyClient.get_item_by_path_with_retry()` replaces `time.sleep(10)` + single `get_item_by_path()` call. Dramatically improves reliability for large libraries.
+
+### What just happened — Image upload with fallback priority
+
+Images are uploaded in this order:
+1. Try `image_cropped` from WordPress API (preferred, better quality)
+2. Fall back to `raw_image_url` if cropped not available
+3. Upload three types: Primary (original), Backdrop (W800), Banner (W800)
+
+The upload is **best-effort**: failures are logged but don't block the item from being marked `completed`. Rationale: A video with metadata but no poster is better than a failed processing pipeline. Images can be retried later via CLI (`python -m src retry --status completed`).
+
+### What could go wrong — Database connection exhaustion
+
+The `ThreadedConnectionPool` has a max of 5 connections. If more than 5 threads try to get a connection simultaneously, they will block until a connection is released. This is unlikely with 3 workers (1 connection each), but could happen if workers are scaled up or if queries are slow.
+
+Mitigation: Monitor connection usage via PostgreSQL `pg_stat_activity`. Increase `maxconn=` in pool if scaling beyond 5 concurrent workers.
+
+### What could go wrong — Queue database grows unbounded
+
+Completed items remain in the queue forever. After processing 10,000 files, the queue will have 10,000 rows. Queries will slow down without proper indexes.
+
+Current mitigation: Indexes on `status`, `(status, next_retry_at)`, and `file_path UNIQUE` keep lookups fast up to ~100k rows. Beyond that, consider:
+1. Periodic cleanup: `DELETE FROM processing_queue WHERE status = 'completed' AND updated_at < NOW() - INTERVAL '30 days'`
+2. Archival: move old completed items to a separate `processing_history` table
+3. Partitioning: partition by `created_at` month
+
+The CLI `cleanup` command provides manual purging, but automatic cleanup via cron job or RetryHandler may be needed for high-volume production.
+
+### What we learned — Testing worker interactions requires integration tests
+
+Unit tests for individual workers (FileProcessorWorker, EmbyUpdaterWorker) pass, but integration bugs appeared when workers ran together:
+- Worker 1 marks item `moved`, Worker 2 claims it immediately before Worker 1's transaction commits → duplicate processing
+- Fixed by ensuring `UPDATE ... WHERE id = ?` uses the ID from the locked row, not a re-query
+
+Lesson: Worker coordination bugs only appear in integration tests with real database transactions. The 24 queue integration tests (`test_queue.py`) catch these — unit tests alone are insufficient for concurrent systems.

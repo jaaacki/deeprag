@@ -4,6 +4,56 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-02-15
+
+Phase 4: Production Features — queue database, worker processes, image upload, and retry polling bring emby-processor to production readiness.
+
+### Added
+- PostgreSQL queue database with connection pooling (#2)
+  - `QueueDatabase` class with ThreadedConnectionPool (psycopg2)
+  - Atomic worker claiming via `FOR UPDATE SKIP LOCKED`
+  - Status flow: pending → processing → moved → emby_pending → completed
+  - Database migration: `migrations/001_create_queue.sql`
+  - Exponential backoff retry for errors (1m, 5m, 15m)
+- Worker processes for decoupled processing (#2)
+  - `FileProcessorWorker`: picks pending files → extracts → fetches metadata → moves → marks moved
+  - `EmbyUpdaterWorker`: picks moved files → scans Emby → updates metadata → uploads images → marks completed
+  - `RetryHandler`: automatic retry for errors with exponential backoff
+  - `WorkerManager`: lifecycle management with graceful shutdown (SIGTERM/SIGINT)
+- Image upload to Emby (#1)
+  - Downloads and uploads Primary, Backdrop, Banner images from WordPress
+  - Prefers `image_cropped`, falls back to `raw_image_url`
+  - Best-effort upload (failures logged, don't block completion)
+  - Integrated in both `pipeline.py` and `EmbyUpdaterWorker`
+- Retry polling for Emby item lookup (#3)
+  - `EmbyClient.get_item_by_path_with_retry()`: exponential backoff (2s, 4s, 8s, 16s, 32s, 64s)
+  - Replaces fixed 10s sleep + single attempt
+  - Dramatically reduces time from file move to Emby indexing
+- Targeted Emby scan endpoint (#3)
+  - Uses `parent_folder_id` (EMBY_PARENT_FOLDER_ID=4) for recursive scan
+  - Avoids full library scan, faster indexing
+- CLI for queue management (#2)
+  - Commands: `status`, `list`, `retry`, `retry-all`, `cleanup`, `reset`
+  - Entry point: `python -m src`
+  - Real-time visibility into processing pipeline
+- Comprehensive test coverage
+  - 152 tests passing (up from 45)
+  - New test suites: `test_queue.py` (24), `test_workers.py` (25), `test_cli.py` (50)
+  - Enhanced `test_emby_client.py` (8 new tests for retry polling and image upload)
+
+### Changed
+- Watcher integration: file events now call `queue_db.add()` instead of `pipeline.process()`
+- Architecture updated to PostgreSQL-based queue (ARCHITECTURE.md reflects new design)
+- `docker-compose.yml`: removed deprecated `version` field
+
+### Fixed
+- Security: removed hardcoded API keys from DEPLOY.md and test files
+- Entry point documentation: corrected to `python -m src` in all references
+
+## [0.3.0] — 2026-02-15
+
+Phase 3: Emby Integration — processed files are automatically registered in Emby with correct metadata.
+
 ### Added
 - Emby metadata update integration: writes WordPress metadata to Emby items (#8)
   - `EmbyClient.get_item_by_path()`: Find Emby item by file path

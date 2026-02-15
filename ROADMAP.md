@@ -33,20 +33,27 @@
 - [x] Emby API client for library scan trigger (#8)
 - [x] Metadata push to Emby (title, actress, genre, studios) (#8)
 - [x] LockData flag to prevent Emby from overwriting metadata (#8)
-- [ ] Image upload to Emby (Primary, Backdrop, Banner) from WordPress
-- [ ] Image deletion before upload (clean slate for new images)
+- [x] Image upload to Emby (Primary, Backdrop, Banner) from WordPress (#1)
+- [x] Targeted scan using parent_folder_id instead of full library scan (#3)
+- [x] Retry polling with exponential backoff for item lookup (#3)
 - [ ] NFO file generation as fallback metadata source
 
 ## Phase 4 — Production Features (v0.4.0)
 
 > Essential features for production reliability and completeness.
 
-- [ ] State tracking: SQLite database for processed items (#9)
-  - Track: file_path, movie_code, emby_item_id, status, error_message, processed_at
-  - Enable retries for failed items
-  - Prevent re-processing
+- [x] State tracking: PostgreSQL queue database for processed items (#2)
+  - Track: file_path, movie_code, metadata, status, error_message, retry_count, timestamps
+  - Enable retries for failed items with exponential backoff
+  - Prevent re-processing with unique file_path constraint
+  - Worker processes for decoupled file and Emby operations
+  - CLI for queue management (status, list, retry, cleanup, reset)
+- [x] Error retry logic with exponential backoff (#2)
+  - Automatic retry for errors (1m, 5m, 15m)
+  - RetryHandler worker process
+  - Max retries: 3 (configurable)
 - [ ] Batch mode: Process entire existing Emby library (#10)
-  - CLI command: `python main.py --batch`
+  - CLI command: `python -m src batch`
   - Query Emby for all items (ParentId from EMBY_PARENT_FOLDER_ID)
   - Extract movie codes from file paths
   - Search WordPress and update metadata
@@ -54,9 +61,6 @@
   - YAML config file: canonical name → [aliases]
   - Handle romanization variations (Saijo vs Saijou)
   - Fuzzy matching for auto-suggestions
-- [ ] Error retry logic with exponential backoff (#12)
-  - Automatic retry for API failures
-  - Max retries configurable
 
 ## Phase 5 — Advanced Integration (v0.5.0)
 
