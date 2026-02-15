@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Emby metadata update integration: writes WordPress metadata to Emby items (#8)
+  - `EmbyClient.get_item_by_path()`: Find Emby item by file path
+  - `EmbyClient.get_item_details()`: Retrieve full item metadata
+  - `EmbyClient.update_item_metadata()`: Update item with WordPress API data
+  - Field mapping: actress→People, genre→GenreItems, label→Studios
+  - Sets `LockData: true` to prevent Emby from overwriting metadata
+  - Pipeline now waits for Emby scan, finds item, and updates metadata after file move
+- Test documentation: `test_emby_simple.md` and `test_emby_update.md` with detailed checklists
+- Reference implementation: `googlescript_legacy/` JavaScript code for field mapping specs
+
+### Fixed
+- Title casing: apply `.title()` for proper capitalization after stripping movie code (#8)
+- Duplicate movie code in filenames: strip code from title if already present (#8)
+
 ## [0.1.0] — 2026-02-15
 
 Phase 1: Core Pipeline — files dropped in the watch folder are automatically

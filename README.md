@@ -12,6 +12,7 @@ Automated file processing pipeline that watches for new video files, fetches met
 - Renames to: `{Actress} - [{Sub}] {MOVIE-CODE} {Title}.{ext}`
 - Moves to `{destination}/{Actress}/` (creates folder if needed, matches case-insensitively)
 - Triggers Emby server to scan and import the new file
+- Writes metadata to Emby (title, actress, genre, studios) with LockData to prevent overwrites
 
 ### Example
 
@@ -128,8 +129,13 @@ New file appears in /watch
   │   └─ Creates actress folder if needed
   │   └─ Matches existing folders case-insensitively
   │
-  └─ Trigger Emby library scan
-      └─ Emby imports and matches metadata
+  ├─ Trigger Emby library scan
+  │   └─ Wait for Emby to index the file (10s)
+  │
+  └─ Update Emby metadata
+      └─ Find item by path
+      └─ Write WordPress metadata (actress, title, genre, studios)
+      └─ Set LockData: true to prevent overwrites
 ```
 
 ## Error Handling
@@ -155,6 +161,22 @@ pytest tests/ -v
 
 **Note**: Tests run in CI and locally. 45 tests covering extractor, renamer, and Emby client.
 
+### Test Emby Integration
+
+Manual testing scripts for Emby API integration:
+
+- **[test_emby_simple.md](test_emby_simple.md)** — curl commands to test Emby API endpoints
+- **[test_emby_update.md](test_emby_update.md)** — Python test script for metadata updates
+
+```bash
+# Run Python test (requires .env configuration)
+python3 test_emby_update.py
+
+# Or use curl commands from test_emby_simple.md
+```
+
+See test documentation for detailed checklists and passing criteria.
+
 ### Project structure
 
 ```
@@ -173,6 +195,11 @@ emby-processor/
 │   ├── test_extractor.py    # Extractor unit tests
 │   ├── test_renamer.py      # Renamer unit tests
 │   └── test_emby_client.py  # Emby client unit tests
+├── test_emby_update.py      # Standalone Emby metadata test
+├── test_emby_simple.py      # Curl command generator for testing
+├── test_emby_update.md      # Python test documentation + checklist
+├── test_emby_simple.md      # Curl test documentation + checklist
+├── googlescript_legacy/     # Reference JavaScript implementation
 ├── Dockerfile
 ├── docker-compose.yml
 ├── DEPLOY.md                # Deployment guide for Synology NAS

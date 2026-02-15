@@ -30,8 +30,10 @@
 
 > Processed files are automatically registered in Emby with correct metadata.
 
-- [ ] Emby API client for library scan trigger
-- [ ] Metadata push to Emby (title, actress, genre, poster)
+- [x] Emby API client for library scan trigger (#8)
+- [x] Metadata push to Emby (title, actress, genre, studios) (#8)
+- [x] LockData flag to prevent Emby from overwriting metadata (#8)
+- [ ] Image upload to Emby (Primary, Backdrop, Banner)
 - [ ] NFO file generation as fallback metadata source
 
 ## Backlog
