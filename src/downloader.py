@@ -106,9 +106,17 @@ class DownloadManager:
 
             proc.wait(timeout=DOWNLOAD_TIMEOUT)
 
-            if proc.returncode == 0:
+            # The shell script uses set -e and the last [[ -f ]] test
+            # returns 1 when no subtitle file exists, even though the
+            # video downloaded fine. Treat as success if output has "OK:".
+            output_has_ok = any(l.strip().startswith("OK:") for l in output_lines)
+
+            if proc.returncode == 0 or output_has_ok:
                 job.status = DownloadStatus.COMPLETED
-                logger.info(f"[Download] Job {job.id} completed successfully")
+                if proc.returncode != 0:
+                    logger.info(f"[Download] Job {job.id} exit code {proc.returncode} but output contains OK — treating as success")
+                else:
+                    logger.info(f"[Download] Job {job.id} completed successfully")
             else:
                 job.status = DownloadStatus.FAILED
                 job.error = f"Exit code {proc.returncode}"
