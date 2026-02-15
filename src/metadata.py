@@ -6,7 +6,8 @@ import requests
 logger = logging.getLogger(__name__)
 
 # Unified search endpoint (backend handles provider selection)
-UNIFIED_SEARCH_ENDPOINT = '/emby/v1/search'
+# Note: base_url already includes /emby/v1, so just add /search
+UNIFIED_SEARCH_ENDPOINT = '/search'
 
 
 class MetadataClient:
