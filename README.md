@@ -75,7 +75,7 @@ For production deployment on Synology NAS, see [DEPLOY.md](DEPLOY.md) for detail
 The `docker-compose.yml` mounts:
 - `/volume3/docker/yt_dlp/downloads` → `/watch` (input)
 - `/volume2/system32/linux/systemd/jpv` → `/destination` (output)
-- `./.env` → `/app/.env` (read-only configuration)
+- `./.env` → `/app/.env` (read/write, updated by token refresh)
 - `./.refresh_token` → `/app/.refresh_token` (WordPress refresh token)
 
 ### Automatic Token Refresh

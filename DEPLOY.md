@@ -30,7 +30,7 @@ nano .env
 
 Update these values:
 - `API_TOKEN=your-wordpress-api-token`
-- `EMBY_API_KEY=8223eb1d85c34bb3a33a2cf704336bce`
+- `EMBY_API_KEY=your-emby-api-key`
 
 Note: `EMBY_BASE_URL=http://emby_server:8096` is already configured correctly.
 
@@ -56,7 +56,7 @@ Check that emby-processor can reach:
 docker exec emby-processor curl -s http://wpfamilyhubid_nginx/wp-json/emby/v1/health
 
 # Check Emby API
-docker exec emby-processor curl -s -H "X-Emby-Token: 8223eb1d85c34bb3a33a2cf704336bce" http://emby_server:8096/System/Info
+docker exec emby-processor curl -s -H "X-Emby-Token: YOUR_EMBY_API_KEY" http://emby_server:8096/System/Info
 ```
 
 ## Network Architecture
@@ -97,7 +97,8 @@ docker exec emby-processor curl -s -H "X-Emby-Token: 8223eb1d85c34bb3a33a2cf7043
 
 - **Watch**: `/volume3/docker/yt_dlp/downloads` → `/watch` (read/write)
 - **Destination**: `/volume2/system32/linux/systemd/jpv` → `/destination` (read/write)
-- **Config**: `./.env` → `/app/.env` (read-only)
+- **Config**: `./.env` → `/app/.env` (read/write, updated by token refresh)
+- **Refresh Token**: `./.refresh_token` → `/app/.refresh_token` (read-only)
 
 ## Troubleshooting
 

@@ -89,26 +89,22 @@ class Pipeline:
             # Step 7: Trigger Emby library scan and update metadata
             if self.emby_client and self.trigger_scan:
                 emby_config = self.config.get('emby', {})
-                library_id = emby_config.get('library_id', '')
+                parent_folder_id = emby_config.get('parent_folder_id', '')
 
-                # Trigger scan first
-                if library_id:
-                    logger.info('Triggering Emby scan for library %s', library_id)
-                    scan_success = self.emby_client.scan_library_by_id(library_id)
+                # Trigger scan using parent folder ID (matches legacy /emby/Items/{id}/Refresh)
+                if parent_folder_id:
+                    logger.info('Triggering Emby scan for parent folder %s', parent_folder_id)
+                    scan_success = self.emby_client.scan_library_by_id(parent_folder_id)
                 else:
-                    logger.info('Triggering Emby library scan')
+                    logger.info('Triggering Emby full library scan')
                     scan_success = self.emby_client.trigger_library_scan()
 
                 if not scan_success:
                     logger.error('Emby scan failed, skipping metadata update')
                 else:
-                    # Wait for Emby to process the file
-                    import time
-                    logger.info('Waiting 10 seconds for Emby to process the file...')
-                    time.sleep(10)
-
-                    # Find the item in Emby by path
-                    emby_item = self.emby_client.get_item_by_path(str(new_path))
+                    # Poll for the item with exponential backoff retry
+                    logger.info('Polling for Emby item with retry: %s', new_path)
+                    emby_item = self.emby_client.get_item_by_path_with_retry(str(new_path))
                     if emby_item:
                         item_id = emby_item.get('Id')
                         logger.info('Found Emby item %s, updating metadata', item_id)
@@ -119,6 +115,16 @@ class Pipeline:
                             logger.error('Failed to update Emby metadata for item %s', item_id)
                         else:
                             logger.info('Successfully updated Emby metadata for item %s', item_id)
+
+                        # Upload images (best-effort, don't block pipeline)
+                        image_url = metadata.get('image_cropped') or metadata.get('raw_image_url', '')
+                        if image_url:
+                            try:
+                                self.emby_client.upload_item_images(item_id, image_url)
+                            except Exception as e:
+                                logger.error('Image upload failed for item %s: %s', item_id, e)
+                        else:
+                            logger.info('No image URL in metadata for item %s, skipping image upload', item_id)
                     else:
                         logger.error('Could not find Emby item for path: %s', new_path)
 

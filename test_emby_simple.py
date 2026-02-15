@@ -5,7 +5,7 @@ import json
 
 # Test data - you can run these with curl
 EMBY_URL = "https://emby.familyhub.id"
-API_KEY = "8223eb1d85c34bb3a33a2cf704336bce"
+API_KEY = "YOUR_EMBY_API_KEY"  # Replace with your actual Emby API key
 TEST_ITEM_ID = "10249"
 
 print("=" * 60)
