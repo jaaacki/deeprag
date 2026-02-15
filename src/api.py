@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+from .log_buffer import get_log_buffer
 from .queue import QueueDB
 
 logger = logging.getLogger(__name__)
@@ -382,32 +383,18 @@ async def cleanup(older_than_days: int = Query(30, ge=1, le=365)):
 
 @app.get("/api/logs")
 async def get_logs(lines: int = Query(100, ge=1, le=1000)):
-    """Get recent log lines from docker container."""
+    """Get recent log lines from in-memory buffer."""
     try:
-        import subprocess
-
-        # Get logs from docker container
-        result = subprocess.run(
-            ['docker', 'logs', '--tail', str(lines), 'emby-processor'],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-
-        # Combine stdout and stderr
-        log_output = result.stdout + result.stderr
-        log_lines = log_output.strip().split('\n')[-lines:]
+        log_buffer = get_log_buffer()
+        log_lines = log_buffer.get_recent_logs(lines=lines)
 
         return {
             "lines": log_lines,
             "count": len(log_lines),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="Log fetch timed out")
-    except FileNotFoundError:
-        raise HTTPException(status_code=500, detail="Docker command not available")
     except Exception as e:
+        logger.error(f"Failed to fetch logs: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch logs: {str(e)}")
 
 

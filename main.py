@@ -9,6 +9,7 @@ import time
 from dotenv import load_dotenv
 
 from src.emby_client import EmbyClient
+from src.log_buffer import get_log_buffer
 from src.metadata import MetadataClient
 from src.pipeline import Pipeline
 from src.queue import QueueDB
@@ -21,6 +22,9 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
 )
 logger = logging.getLogger('emby-processor')
+
+# Initialize log buffer for dashboard access
+get_log_buffer()
 
 
 def load_config() -> dict:
