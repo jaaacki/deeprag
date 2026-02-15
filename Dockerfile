@@ -1,7 +1,11 @@
 FROM python:3.12-slim
 
-# Install curl and cron for token refresh
+# Install curl, cron, and Docker CLI (for yt-dlp container exec)
 RUN apt-get update && apt-get install -y curl cron && rm -rf /var/lib/apt/lists/*
+
+# Install Docker CLI (client only, no daemon)
+RUN curl -fsSL https://download.docker.com/linux/static/stable/$(uname -m)/docker-27.5.1.tgz \
+    | tar xz --strip-components=1 -C /usr/local/bin docker/docker
 
 WORKDIR /app
 

@@ -17,7 +17,7 @@ services:
       # WordPress refresh token (for auto-refresh)
       - ./.refresh_token:/app/.refresh_token:ro
       # Docker socket (for log access from API)
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - wpfamilyhub
       - emby

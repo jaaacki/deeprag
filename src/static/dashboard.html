@@ -125,6 +125,54 @@
             </div>
         </div>
 
+        <!-- Download Form -->
+        <div class="row mb-4">
+            <div class="col">
+                <div class="card border-primary">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-download"></i> yt-dlp Download</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="downloadForm" onsubmit="submitDownload(event)">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-6">
+                                    <label for="downloadUrl" class="form-label">URL</label>
+                                    <input type="url" class="form-control" id="downloadUrl" placeholder="https://..." required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="downloadFilename" class="form-label">Filename <small class="text-muted">(optional)</small></label>
+                                    <input type="text" class="form-control" id="downloadFilename" placeholder="custom-filename">
+                                </div>
+                                <div class="col-md-2">
+                                    <button type="submit" class="btn btn-primary w-100" id="downloadBtn">
+                                        <i class="bi bi-download"></i> Download
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                        <!-- Recent Downloads -->
+                        <div id="recentDownloads" class="mt-3" style="display: none;">
+                            <h6 class="text-muted mb-2">Recent Downloads</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered mb-0" style="font-size: 0.8rem;">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>URL</th>
+                                            <th>Filename</th>
+                                            <th>Status</th>
+                                            <th>Started</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="downloadsTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Queue Table -->
         <div class="row mb-4">
             <div class="col">
@@ -292,7 +340,7 @@
             }
 
             showRefreshIndicator();
-            await Promise.all([refreshStats(), refreshQueue()]);
+            await Promise.all([refreshStats(), refreshQueue(), refreshDownloads()]);
             hideRefreshIndicator();
             updateLastUpdateTime();
         }
@@ -728,6 +776,82 @@
             } catch (error) {
                 showToast(`Error: ${error.message}`, 'error');
             }
+        }
+
+        // === Download Form ===
+        async function submitDownload(event) {
+            event.preventDefault();
+            const urlInput = document.getElementById('downloadUrl');
+            const filenameInput = document.getElementById('downloadFilename');
+            const btn = document.getElementById('downloadBtn');
+
+            const url = urlInput.value.trim();
+            if (!url) return;
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Starting...';
+
+            try {
+                const params = new URLSearchParams({ url });
+                if (filenameInput.value.trim()) {
+                    params.append('filename', filenameInput.value.trim());
+                }
+
+                const response = await fetch(`${API_BASE}/api/download?${params}`, { method: 'POST' });
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Download failed');
+                }
+
+                const result = await response.json();
+                showToast(result.message || 'Download started', 'success');
+                urlInput.value = '';
+                filenameInput.value = '';
+                refreshDownloads();
+            } catch (error) {
+                showToast(`Error: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-download"></i> Download';
+            }
+        }
+
+        async function refreshDownloads() {
+            try {
+                const response = await fetch(`${API_BASE}/api/downloads?limit=10`);
+                const data = await response.json();
+
+                const container = document.getElementById('recentDownloads');
+                const tbody = document.getElementById('downloadsTableBody');
+
+                if (!data.jobs || data.jobs.length === 0) {
+                    container.style.display = 'none';
+                    return;
+                }
+
+                container.style.display = 'block';
+                tbody.innerHTML = data.jobs.map(job => `
+                    <tr>
+                        <td><code>${job.id}</code></td>
+                        <td class="text-truncate" style="max-width: 300px;" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</td>
+                        <td>${job.filename ? escapeHtml(job.filename) : '<span class="text-muted">auto</span>'}</td>
+                        <td>${getDownloadStatusBadge(job.status)}</td>
+                        <td><small>${job.started_at ? formatDate(job.started_at) : '-'}</small></td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to fetch downloads:', error);
+            }
+        }
+
+        function getDownloadStatusBadge(status) {
+            const map = {
+                'queued': '<span class="badge bg-secondary">queued</span>',
+                'downloading': '<span class="badge bg-primary"><span class="spinner-border spinner-border-sm" style="width:0.6rem;height:0.6rem;"></span> downloading</span>',
+                'completed': '<span class="badge bg-success">completed</span>',
+                'failed': '<span class="badge bg-danger">failed</span>',
+            };
+            return map[status] || `<span class="badge bg-secondary">${status}</span>`;
         }
 
         // Helper functions

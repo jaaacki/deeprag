@@ -988,6 +988,54 @@ async def bulk_refresh_metadata(
         db._put_conn(conn)
 
 
+@app.post("/api/download")
+async def submit_download(
+    url: str = Query(..., description="URL to download"),
+    filename: str = Query("", description="Optional output filename"),
+):
+    """Submit a yt-dlp download job via docker exec."""
+    from .downloader import get_download_manager
+
+    if not url.strip():
+        raise HTTPException(status_code=400, detail="URL is required")
+
+    manager = get_download_manager()
+    job = manager.submit(url.strip(), filename.strip() or None)
+
+    logger.info(f"[API] Download submitted: job={job.id} url={url}")
+
+    return {
+        "success": True,
+        "message": f"Download started (job {job.id})",
+        "job": job.to_dict(),
+    }
+
+
+@app.get("/api/downloads")
+async def list_downloads(limit: int = Query(20, ge=1, le=100)):
+    """List recent download jobs."""
+    from .downloader import get_download_manager
+
+    manager = get_download_manager()
+    jobs = manager.list_jobs(limit=limit)
+    return {
+        "jobs": [j.to_dict() for j in jobs],
+        "count": len(jobs),
+    }
+
+
+@app.get("/api/downloads/{job_id}")
+async def get_download(job_id: str):
+    """Get details for a specific download job."""
+    from .downloader import get_download_manager
+
+    manager = get_download_manager()
+    job = manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Download job not found")
+    return {"job": job.to_dict()}
+
+
 @app.get("/api/logs")
 async def get_logs(lines: int = Query(100, ge=1, le=1000)):
     """Get recent log lines from in-memory buffer."""
