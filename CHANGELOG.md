@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-02-15
+
+### Fixed
+- **CRITICAL**: Emby metadata Name field mapping (#8)
+  - Name field now extracted from renamed filename (without extension), matching legacy Google Script behavior
+  - Previously incorrectly used WordPress `title` field, causing Emby to display wrong titles
+  - Also sets `SortName` and `ForcedSortName` to match Name field
+  - Verified against `googlescript_legacy/items.js:336` implementation
+- Image download from WordPress media-crop endpoints (#1)
+  - WordPress media-crop URLs return valid JPEG data but with HTTP 404 status code
+  - Modified `download_image()` to accept response if it contains valid image data (Content-Type: image/*, non-empty body)
+  - Prevents failure on WordPress's incorrect status code behavior
+  - All three image types (Primary, Backdrop, Banner) now upload successfully
+
 ## [0.4.0] — 2026-02-15
 
 Phase 4: Production Features — queue database, worker processes, image upload, and retry polling bring emby-processor to production readiness.

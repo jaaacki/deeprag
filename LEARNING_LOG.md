@@ -232,3 +232,94 @@ Unit tests for individual workers (FileProcessorWorker, EmbyUpdaterWorker) pass,
 - Fixed by ensuring `UPDATE ... WHERE id = ?` uses the ID from the locked row, not a re-query
 
 Lesson: Worker coordination bugs only appear in integration tests with real database transactions. The 24 queue integration tests (`test_queue.py`) catch these — unit tests alone are insufficient for concurrent systems.
+
+## 2026-02-15 — Production Deployment & Critical Metadata Fix
+
+### What just happened — WordPress media-crop endpoints return 404 with valid data
+
+Discovered WordPress media-crop URLs return valid JPEG image data but with HTTP **404 status code** instead of 200. Testing revealed:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "https://wp.familyhub.id/media-crop/3961?w=379&h=600"
+# Status: 404 Not Found
+# Content-Type: image/jpeg
+# Body: 48KB valid JPEG data
+```
+
+This is a **WordPress bug** — the endpoint works but returns the wrong status code. Our code was calling `resp.raise_for_status()` which threw an exception on 404, preventing image downloads despite valid data being available.
+
+**Fix**: Modified `download_image()` to check for valid image data (Content-Type: image/*, non-empty body) **regardless of status code**. If we get valid image data, accept it even with 404 status. This allows all three image types (Primary, Backdrop, Banner) to upload successfully.
+
+Key lesson: **Always validate response content, not just status codes**. HTTP status codes can be incorrect, especially with custom WordPress endpoints.
+
+### CRITICAL: Name field must come from filename, not WordPress title
+
+The most critical bug in the entire system was incorrect Emby metadata mapping. The Emby `Name` field controls what title is displayed in the UI.
+
+**What we did wrong**: Set `emby_item['Name'] = metadata.get('title', '')` using WordPress API's `title` field.
+
+**What the legacy Google Script does** (googlescript_legacy/items.js:336):
+```javascript
+embyItem.Name = Util.getNameFromPath(obj.Path || '');  // Filename without extension!
+embyItem.OriginalTitle = obj.missAv_original_title || '';  // Japanese
+embyItem.SortName = Util.getNameFromPath(obj.Path || '');
+embyItem.ForcedSortName = Util.getNameFromPath(obj.Path || '');
+```
+
+The legacy script extracts Name from the **file path** (renamed filename), NOT from WordPress title field! The `getNameFromPath()` function simply strips the directory and extension:
+
+```javascript
+getNameFromPath: function (path) {
+  return path.replace(/^.*\//, '').replace(/\.[^/.]+$/, '')  // Remove path and extension
+}
+```
+
+**Why this matters**: The renamed filename contains all the structured metadata we carefully build: `{Actress} - [{Sub}] {MOVIE-CODE} {Title}`. Using the WordPress title field loses this structure and shows incorrect titles in Emby.
+
+**Correct mapping**:
+- `Name`: Filename without extension (e.g., "Meguri (Meg Fujiura) - [English Sub] JUR-589 I Wanted My Wife To...")
+- `OriginalTitle`: WordPress `original_title` (Japanese text)
+- `SortName`: Same as Name
+- `ForcedSortName`: Same as Name
+
+**Fix**: Extract Name from `emby_item['Path']` by taking the last path component and removing the extension. This matches legacy behavior exactly.
+
+### What we learned — Always check legacy implementation for field mappings
+
+When implementing metadata mapping, we made assumptions about what fields should contain based on their names (`Name` = title, `OriginalTitle` = original). These assumptions were **wrong**.
+
+The legacy Google Script has the definitive field mapping specification. Before implementing any Emby integration, we should:
+
+1. **Read the legacy code first** — Don't guess field mappings
+2. **Search for all field assignments** — Use grep to find every place a field is set
+3. **Understand the transformations** — What functions like `getNameFromPath()` actually do
+4. **Test against legacy behavior** — Compare Emby output between systems
+
+This debugging session cost ~2 hours because we didn't check the legacy implementation first. The fix took 2 minutes once we found the correct mapping in the Google Script.
+
+**Lesson**: Legacy code is the specification. Documentation and field names can be misleading. When migrating a system, the existing implementation is the source of truth for behavior, not assumptions or intuition.
+
+### What could go wrong — Other field mappings may also be incorrect
+
+We fixed `Name`, `SortName`, and `ForcedSortName`. But there are many other Emby fields we're setting:
+- `Overview` — Are we using the right WordPress field?
+- `People` — Is the actor type and structure correct?
+- `GenreItems` — Are we transforming genre strings properly?
+- `Studios` — Does label mapping match legacy?
+- `ProductionYear` / `PremiereDate` — Date parsing assumptions?
+
+**Action**: Audit ALL field mappings against `googlescript_legacy/items.js` lines 327-357 to verify they match. Don't assume our implementation is correct just because it "makes sense" — verify against legacy behavior.
+
+### What we learned — Production testing reveals bugs unit tests miss
+
+All unit tests passed, but production deployment with real files revealed two critical bugs (WordPress 404 handling, Name field mapping). Why?
+
+1. **Unit tests mock external services** — We mocked WordPress responses with 200 status, missing the real 404 behavior
+2. **Unit tests don't verify legacy compatibility** — We tested our logic, not compatibility with Google Script behavior
+3. **Integration tests use test data** — Not real Emby instances with actual title display behavior
+
+**Better testing strategy**:
+- Integration tests with real WordPress and Emby instances (not mocks)
+- Regression tests comparing output between legacy and new system
+- Production smoke tests after deployment before marking complete
+- Always test with real data from production, not synthetic test cases
