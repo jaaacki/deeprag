@@ -304,24 +304,39 @@ class QueueDB:
             self._put_conn(conn)
 
     def reset_for_retry(self, item_id: int) -> Optional[dict]:
-        """Reset an error item back to 'pending' for retry.
+        """Reset an error item for retry.
+
+        If the file was already moved (new_path is set), resets to 'moved'
+        so it resumes at the Emby update stage. Otherwise resets to 'pending'
+        for the full pipeline.
 
         Returns the updated row, or None if not found or not eligible.
         """
         conn = self._get_conn()
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                # Check if the file was already moved
+                cur.execute(
+                    'SELECT new_path FROM processing_queue WHERE id = %s AND status = %s',
+                    (item_id, 'error'),
+                )
+                check = cur.fetchone()
+                if not check:
+                    return None
+
+                resume_status = 'moved' if check['new_path'] else 'pending'
+
                 cur.execute(
                     """UPDATE processing_queue
-                       SET status = 'pending', error_message = NULL, next_retry_at = NULL
+                       SET status = %s, error_message = NULL, next_retry_at = NULL
                        WHERE id = %s AND status = 'error' AND retry_count <= %s
                        RETURNING *""",
-                    (item_id, MAX_RETRIES),
+                    (resume_status, item_id, MAX_RETRIES),
                 )
                 row = cur.fetchone()
             conn.commit()
             if row:
-                logger.info('Reset item %s for retry (attempt %s)', item_id, row['retry_count'])
+                logger.info('Reset item %s to %s for retry (attempt %s)', item_id, resume_status, row['retry_count'])
                 return dict(row)
             return None
         except Exception:
