@@ -356,13 +356,49 @@ class EmbyClient:
             resp = requests.post(url, json=emby_item, headers=headers, timeout=30)
             logger.info('Emby update response: status=%s, body=%s', resp.status_code, resp.text[:200])
             resp.raise_for_status()
-            logger.info('Successfully updated Emby item %s metadata', item_id)
-            return True
         except requests.RequestException as e:
             logger.error('Failed to update Emby item %s: %s', item_id, e)
             if hasattr(e, 'response') and e.response is not None:
                 logger.error('Response status: %s, body: %s', e.response.status_code, e.response.text[:500])
             return False
+
+        # Verify the update was persisted by reading back from Emby
+        import time
+        time.sleep(1)  # Brief pause for Emby to persist
+        verified = self.get_item_details(item_id)
+        if not verified:
+            logger.error('Verification failed: could not read back item %s', item_id)
+            return False
+
+        mismatches = []
+        # Check Name
+        expected_name = emby_item.get('Name', '')
+        actual_name = verified.get('Name', '')
+        if expected_name and actual_name != expected_name:
+            mismatches.append(f'Name: expected={expected_name!r}, got={actual_name!r}')
+
+        # Check OriginalTitle
+        expected_ot = emby_item.get('OriginalTitle', '')
+        actual_ot = verified.get('OriginalTitle', '')
+        if expected_ot and actual_ot != expected_ot:
+            mismatches.append(f'OriginalTitle: expected={expected_ot[:40]!r}, got={actual_ot[:40]!r}')
+
+        # Check Overview
+        expected_ov = emby_item.get('Overview', '')
+        actual_ov = verified.get('Overview', '')
+        if expected_ov and actual_ov != expected_ov:
+            mismatches.append(f'Overview: expected len={len(expected_ov)}, got len={len(actual_ov)}')
+
+        # Check LockData
+        if not verified.get('LockData'):
+            mismatches.append('LockData: not set')
+
+        if mismatches:
+            logger.error('Emby update verification FAILED for item %s: %s', item_id, '; '.join(mismatches))
+            return False
+
+        logger.info('Emby update verified for item %s', item_id)
+        return True
 
     # ---- Image management methods ----
 
