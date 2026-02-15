@@ -309,6 +309,10 @@
                                         <li><a class="dropdown-item text-warning" href="#" onclick="runAction(${item.id}, 'full-retry', event)">
                                             <i class="bi bi-arrow-clockwise"></i> Full Retry
                                         </a></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><a class="dropdown-item text-danger" href="#" onclick="deleteItem(${item.id}, event)">
+                                            <i class="bi bi-trash"></i> Delete from Queue
+                                        </a></li>
                                     </ul>
                                 </div>
                             </div>
@@ -567,6 +571,42 @@
             });
         }
 
+        // Delete item from queue
+        async function deleteItem(itemId, event) {
+            if (event) event.preventDefault();
+
+            if (!confirm(`Delete item ${itemId} from queue?\n\nThis will remove it from the processing queue.\nThe actual file will NOT be deleted.`)) {
+                showToast('Delete cancelled', 'info');
+                return;
+            }
+
+            logger.info(f"[API Action] Delete requested for item {itemId}");
+            showToast('Deleting item...', 'info');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/queue/${itemId}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Delete failed');
+                }
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showToast(result.message || 'Item deleted successfully', 'success');
+                    // Force refresh to remove deleted item from table
+                    setTimeout(() => refreshData(), 500);
+                } else {
+                    showToast(result.message || 'Delete failed', 'error');
+                }
+            } catch (error) {
+                showToast(`Error: ${error.message}`, 'error');
+            }
+        }
+
         // Run granular action with loading state
         async function runAction(itemId, action, event) {
             if (event) event.preventDefault();
@@ -596,7 +636,8 @@
 
                 if (result.success) {
                     showToast(result.message || 'Action completed successfully', 'success');
-                    setTimeout(() => refreshData(), 500);
+                    // Don't auto-refresh - let user keep dropdown open for multiple actions
+                    // The 5-second auto-refresh will update the table
                 } else {
                     showToast(result.message || 'Action failed', 'error');
                 }

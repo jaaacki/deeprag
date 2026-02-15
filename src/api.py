@@ -616,6 +616,50 @@ async def action_full_retry(item_id: int):
     return await retry_item(item_id)
 
 
+@app.delete("/api/queue/{item_id}")
+async def delete_queue_item(item_id: int):
+    """Delete a queue item from the database.
+
+    Useful for removing error items or cleaning up the queue.
+    Does NOT delete the actual file - only removes from processing queue.
+    """
+    logger.info(f"[API Action] Delete requested for item {item_id}")
+    db = get_queue_db()
+    conn = db._get_conn()
+
+    try:
+        with conn.cursor() as cur:
+            # Check if item exists
+            cur.execute("SELECT file_path, status FROM processing_queue WHERE id = %s", (item_id,))
+            row = cur.fetchone()
+            if not row:
+                logger.warning(f"[API Action] Item {item_id} not found")
+                raise HTTPException(status_code=404, detail="Item not found")
+
+            file_path, status = row
+            logger.info(f"[API Action] Deleting item {item_id}: {file_path} (status: {status})")
+
+            # Delete from database
+            cur.execute("DELETE FROM processing_queue WHERE id = %s", (item_id,))
+            conn.commit()
+
+            logger.info(f"[API Action] Item {item_id} deleted from queue")
+
+            return {
+                "success": True,
+                "message": f"Deleted item {item_id} from queue",
+                "item_id": item_id,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.exception(f"[API Action] Failed to delete item {item_id}")
+        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
+    finally:
+        db._put_conn(conn)
+
+
 @app.post("/api/cleanup")
 async def cleanup(older_than_days: int = Query(30, ge=1, le=365)):
     """Delete completed items older than specified days."""
