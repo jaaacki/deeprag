@@ -18,6 +18,7 @@ Automated file processing pipeline that watches for new video files, fetches met
 - Downloads and uploads poster images (Primary, Backdrop, Banner) from WordPress
 - Automatic retry with exponential backoff for failures
 - CLI for queue management and monitoring
+- yt-dlp download form on dashboard (triggers downloads via `docker exec`)
 
 ### Example
 
@@ -273,6 +274,7 @@ emby-processor/
 │   ├── metadata.py          # WP REST API client
 │   ├── emby_client.py       # Emby server API client (scan, metadata, images)
 │   ├── renamer.py           # Filename builder + sanitizer + file move
+│   ├── downloader.py        # yt-dlp download manager (docker exec + background threads)
 │   └── pipeline.py          # Legacy orchestrator (kept for reference)
 ├── migrations/
 │   └── 001_create_queue.sql # PostgreSQL schema for processing_queue table

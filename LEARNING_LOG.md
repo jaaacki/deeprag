@@ -233,6 +233,36 @@ Unit tests for individual workers (FileProcessorWorker, EmbyUpdaterWorker) pass,
 
 Lesson: Worker coordination bugs only appear in integration tests with real database transactions. The 24 queue integration tests (`test_queue.py`) catch these — unit tests alone are insufficient for concurrent systems.
 
+## 2026-02-15 — yt-dlp Download Integration via Docker Socket
+
+### Why this design — docker exec instead of HTTP API
+
+The ytdlp container runs with `network_mode: host`, which means it cannot join Docker networks and cannot be reached via Docker DNS from emby-processor. Three options were considered:
+
+1. **HTTP API in ytdlp container** — Requires modifying the ytdlp image. Rejected: out of scope, separate maintainer.
+2. **Shared volume + sentinel file** — Write a `.download` file that ytdlp watches. Rejected: fragile, no status feedback.
+3. **Docker socket + `docker exec`** — Mount Docker socket, run `docker exec ytdlp bash ./scripts/downloadWithFileName.sh`. Accepted: no ytdlp changes needed, real-time output capture, works with existing scripts.
+
+The Docker socket was already mounted (read-only for log access). Changing to read-write and installing the Docker CLI static binary (~50MB) was minimal overhead.
+
+### What just happened — In-memory job tracking with background threads
+
+`DownloadManager` uses Python daemon threads for background downloads. Jobs are tracked in a plain dict (not database) because:
+- Downloads are transient (24h TTL) — not worth persisting
+- Job count is low (tens, not thousands) — no scalability concern
+- Status is polled by the dashboard every 5s — no need for push notifications
+
+Each download runs `subprocess.Popen` with stdout streaming. The last 50 lines of output are kept in memory for debugging. A 30-minute timeout kills hung downloads.
+
+### What could go wrong — Docker socket security
+
+The Docker socket gives full Docker API access (equivalent to root). Mitigations:
+- The container only uses `docker exec` to run a specific script in a specific container
+- The container name is configurable via `YTDLP_CONTAINER_NAME` env var
+- No user input reaches shell directly (URL and filename are passed as subprocess args, not shell-interpolated)
+
+For stronger isolation, consider a Docker socket proxy (like Tecnativa/docker-socket-proxy) that only allows `exec` operations.
+
 ## 2026-02-15 — Production Deployment & Critical Metadata Fix
 
 ### What just happened — WordPress media-crop endpoints return 404 with valid data

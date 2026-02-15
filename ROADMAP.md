@@ -78,11 +78,20 @@
   - Use /missavscout endpoint
   - Queue URLs for download
 
+## Phase 6 — Dashboard & Download Integration (v0.5.0)
+
+> Trigger downloads and monitor processing from a single web UI.
+
+- [x] yt-dlp download form on dashboard (#4)
+  - URL + optional filename inputs, submit via `docker exec` into ytdlp container
+  - Background thread execution with in-memory job tracking
+  - Recent downloads table with status badges and auto-refresh
+- [x] Web UI dashboard for processing status (completed earlier, formalized here)
+
 ## Backlog
 
 _Unplaced items — will be assigned to a phase when priorities are clearer._
 
-- [ ] Web UI dashboard for processing status
 - [ ] Manual retry for files in errors/
 - [ ] Notification (webhook/Telegram) on processing success/failure
 - [ ] Multi-language subtitle priority configuration

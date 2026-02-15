@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-02-15
+
+### Added
+- yt-dlp download form on dashboard (#4)
+  - Submit download URLs directly from the web UI
+  - Downloads triggered via `docker exec` into ytdlp container
+  - Background thread execution with in-memory job tracking
+  - Status flow: queued → downloading → completed/failed
+  - Recent downloads table with auto-refresh (5s cycle)
+  - 30-minute timeout per download, 24-hour auto-cleanup
+- 3 new API endpoints for download management
+  - `POST /api/download` — submit a download job
+  - `GET /api/downloads` — list recent download jobs
+  - `GET /api/downloads/{job_id}` — get single job detail with output tail
+- Docker CLI installed in container (static binary, client only)
+- `YTDLP_CONTAINER_NAME` environment variable
+
+### Changed
+- Docker socket mount changed from read-only to read-write (required for `docker exec`)
+
 ## [0.4.1] — 2026-02-15
 
 ### Fixed
