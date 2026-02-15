@@ -724,17 +724,47 @@ async def bulk_refresh_metadata(
                     """, (json.dumps(metadata), item_id))
                     conn.commit()
 
-                # Update Emby if requested and item has emby_item_id
+                # Update Emby directly if requested and item has emby_item_id
                 if update_emby and emby_item_id:
-                    # Set status to 'moved' to trigger EmbyUpdater worker
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                            UPDATE processing_queue
-                            SET status = 'moved', updated_at = NOW()
-                            WHERE id = %s
-                        """, (item_id,))
-                        conn.commit()
-                    logger.info(f"[API Bulk] Item {item_id} set to 'moved' for Emby update")
+                    from .emby_client import EmbyClient
+
+                    # Initialize Emby client
+                    emby_config = {
+                        'base_url': os.getenv('EMBY_BASE_URL', ''),
+                        'api_key': os.getenv('EMBY_API_KEY', ''),
+                        'parent_folder_id': os.getenv('EMBY_PARENT_FOLDER_ID', '4'),
+                        'user_id': os.getenv('EMBY_USER_ID', ''),
+                    }
+
+                    if emby_config['base_url'] and emby_config['api_key']:
+                        emby_client = EmbyClient(
+                            base_url=emby_config['base_url'],
+                            api_key=emby_config['api_key'],
+                            parent_folder_id=emby_config['parent_folder_id'],
+                            user_id=emby_config['user_id'],
+                            wordpress_token=api_config['token'],
+                        )
+
+                        logger.info(f"[API Bulk] Updating Emby metadata for item {item_id} (Emby ID: {emby_item_id})")
+
+                        # Update Emby metadata directly using stored emby_item_id
+                        update_success = emby_client.update_item_metadata(emby_item_id, metadata)
+
+                        if update_success:
+                            logger.info(f"[API Bulk] Successfully updated Emby for item {item_id}")
+
+                            # Upload images (best-effort)
+                            image_url = metadata.get('image_cropped') or metadata.get('raw_image_url', '')
+                            if image_url:
+                                try:
+                                    emby_client.upload_item_images(emby_item_id, image_url)
+                                    logger.info(f"[API Bulk] Uploaded images for Emby item {emby_item_id}")
+                                except Exception as e:
+                                    logger.warning(f"[API Bulk] Image upload failed for item {emby_item_id}: {e}")
+                        else:
+                            logger.warning(f"[API Bulk] Failed to update Emby for item {item_id}")
+                    else:
+                        logger.warning("[API Bulk] Emby not configured, skipping Emby update")
 
                 updated_count += 1
                 logger.info(f"[API Bulk] Successfully updated item {item_id}")
