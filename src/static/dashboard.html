@@ -18,6 +18,8 @@
         .action-btn { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
         #refreshIndicator { display: none; }
         #refreshIndicator.active { display: inline-block; }
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1090; }
+        .btn-loading .spinner-border { width: 0.875rem; height: 0.875rem; border-width: 0.15em; }
     </style>
 </head>
 <body>
@@ -178,6 +180,9 @@
         </div>
     </div>
 
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let autoRefreshInterval;
@@ -260,19 +265,35 @@
                         <td>${item.emby_item_id ? `<code>${item.emby_item_id}</code>` : '-'}</td>
                         <td><small>${formatDate(item.created_at)}</small></td>
                         <td>
-                            <button class="btn btn-sm btn-outline-info action-btn" onclick="viewDetails(${item.id})">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                            ${item.status === 'error' ? `
-                                <button class="btn btn-sm btn-outline-warning action-btn" onclick="retryItem(${item.id})">
-                                    <i class="bi bi-arrow-clockwise"></i>
+                            <div class="btn-group">
+                                <button class="btn btn-sm btn-outline-info action-btn" onclick="viewDetails(${item.id})" title="View Details">
+                                    <i class="bi bi-eye"></i>
                                 </button>
-                            ` : ''}
-                            ${item.status === 'completed' ? `
-                                <button class="btn btn-sm btn-outline-secondary action-btn" onclick="reprocessMetadata(${item.id})">
-                                    <i class="bi bi-arrow-repeat"></i>
-                                </button>
-                            ` : ''}
+                                <div class="btn-group" role="group">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="Actions">
+                                        <i class="bi bi-three-dots-vertical"></i>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li><h6 class="dropdown-header">Pipeline Steps</h6></li>
+                                        <li><a class="dropdown-item" href="#" onclick="runAction(${item.id}, 'extract-code', event)">
+                                            <i class="bi bi-search"></i> Re-extract Code
+                                        </a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="runAction(${item.id}, 'fetch-metadata', event)">
+                                            <i class="bi bi-cloud-download"></i> Re-fetch Metadata
+                                        </a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="runAction(${item.id}, 'rename-file', event)">
+                                            <i class="bi bi-file-earmark-arrow-up"></i> Re-rename & Move
+                                        </a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="runAction(${item.id}, 'update-emby', event)">
+                                            <i class="bi bi-tv"></i> Re-update Emby
+                                        </a></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><a class="dropdown-item text-warning" href="#" onclick="runAction(${item.id}, 'full-retry', event)">
+                                            <i class="bi bi-arrow-clockwise"></i> Full Retry
+                                        </a></li>
+                                    </ul>
+                                </div>
+                            </div>
                         </td>
                     </tr>
                 `).join('');
@@ -348,65 +369,45 @@
             }
         }
 
-        // Retry failed item
+        // Retry failed item (deprecated - use runAction instead)
         async function retryItem(itemId) {
-            if (!confirm(`Retry item ${itemId}?`)) return;
-
-            try {
-                const response = await fetch(`${API_BASE}/api/queue/${itemId}/retry`, {
-                    method: 'POST'
-                });
-                const result = await response.json();
-
-                if (result.success) {
-                    alert(`Item ${itemId} reset for retry`);
-                    refreshData();
-                } else {
-                    alert(`Failed to retry item: ${result.message}`);
-                }
-            } catch (error) {
-                alert(`Error: ${error.message}`);
-            }
+            return runAction(itemId, 'full-retry', null);
         }
 
-        // Reprocess metadata
+        // Reprocess metadata (deprecated - use runAction instead)
         async function reprocessMetadata(itemId) {
-            if (!confirm(`Reprocess metadata for item ${itemId}? This will re-fetch from WordPress and update Emby.`)) return;
-
-            try {
-                const response = await fetch(`${API_BASE}/api/queue/${itemId}/reprocess-metadata`, {
-                    method: 'POST'
-                });
-                const result = await response.json();
-
-                if (result.success) {
-                    alert(`Item ${itemId} queued for metadata reprocessing`);
-                    refreshData();
-                } else {
-                    alert(`Failed: ${result.message}`);
-                }
-            } catch (error) {
-                alert(`Error: ${error.message}`);
-            }
+            return runAction(itemId, 'update-emby', null);
         }
 
         // Cleanup old items
         async function triggerCleanup() {
             const days = prompt('Delete completed items older than how many days?', '30');
-            if (!days || isNaN(days)) return;
+            if (!days || isNaN(days)) {
+                showToast('Cleanup cancelled', 'info');
+                return;
+            }
 
-            if (!confirm(`Delete all completed items older than ${days} days?`)) return;
+            if (!confirm(`Delete all completed items older than ${days} days?`)) {
+                showToast('Cleanup cancelled', 'info');
+                return;
+            }
+
+            showToast('Deleting old items...', 'info');
 
             try {
                 const response = await fetch(`${API_BASE}/api/cleanup?older_than_days=${days}`, {
                     method: 'POST'
                 });
-                const result = await response.json();
 
-                alert(`Deleted ${result.deleted_count} items`);
-                refreshData();
+                if (!response.ok) {
+                    throw new Error('Cleanup failed');
+                }
+
+                const result = await response.json();
+                showToast(`Deleted ${result.deleted_count} items`, 'success');
+                setTimeout(() => refreshData(), 500);
             } catch (error) {
-                alert(`Error: ${error.message}`);
+                showToast(`Error: ${error.message}`, 'error');
             }
         }
 
@@ -434,6 +435,86 @@
                 viewer.scrollTop = viewer.scrollHeight;
             } catch (error) {
                 document.getElementById('logViewer').innerHTML = `<div class="text-danger">Error loading logs: ${error.message}</div>`;
+            }
+        }
+
+        // Toast notifications
+        function showToast(message, type = 'info') {
+            const toastContainer = document.getElementById('toastContainer');
+            const toastId = `toast-${Date.now()}`;
+
+            const bgColors = {
+                'success': 'bg-success',
+                'error': 'bg-danger',
+                'warning': 'bg-warning',
+                'info': 'bg-info'
+            };
+
+            const icons = {
+                'success': 'bi-check-circle',
+                'error': 'bi-x-circle',
+                'warning': 'bi-exclamation-triangle',
+                'info': 'bi-info-circle'
+            };
+
+            const toastHTML = `
+                <div id="${toastId}" class="toast align-items-center text-white ${bgColors[type] || 'bg-info'} border-0" role="alert">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <i class="bi ${icons[type] || 'bi-info-circle'} me-2"></i>
+                            ${escapeHtml(message)}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    </div>
+                </div>
+            `;
+
+            toastContainer.insertAdjacentHTML('beforeend', toastHTML);
+            const toastElement = document.getElementById(toastId);
+            const toast = new bootstrap.Toast(toastElement, { delay: 5000 });
+            toast.show();
+
+            // Remove from DOM after hidden
+            toastElement.addEventListener('hidden.bs.toast', () => {
+                toastElement.remove();
+            });
+        }
+
+        // Run granular action with loading state
+        async function runAction(itemId, action, event) {
+            if (event) event.preventDefault();
+
+            const actionNames = {
+                'extract-code': 'Re-extracting code',
+                'fetch-metadata': 'Re-fetching metadata',
+                'rename-file': 'Re-renaming & moving file',
+                'update-emby': 'Re-updating Emby',
+                'full-retry': 'Resetting for full retry'
+            };
+
+            const loadingMsg = actionNames[action] || 'Processing';
+            showToast(`${loadingMsg}...`, 'info');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/queue/${itemId}/actions/${action}`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Action failed');
+                }
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showToast(result.message || 'Action completed successfully', 'success');
+                    setTimeout(() => refreshData(), 500);
+                } else {
+                    showToast(result.message || 'Action failed', 'error');
+                }
+            } catch (error) {
+                showToast(`Error: ${error.message}`, 'error');
             }
         }
 
