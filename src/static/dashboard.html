@@ -253,8 +253,20 @@
             }
         }
 
-        // Refresh all data
+        // Check if any dropdown is currently open
+        function isAnyDropdownOpen() {
+            const dropdowns = document.querySelectorAll('.dropdown-menu.show');
+            return dropdowns.length > 0;
+        }
+
+        // Refresh all data (skip if dropdown is open to avoid destroying it)
         async function refreshData() {
+            // Don't refresh if user has a dropdown open
+            if (isAnyDropdownOpen()) {
+                console.log('Skipping refresh - dropdown is open');
+                return;
+            }
+
             showRefreshIndicator();
             await Promise.all([refreshStats(), refreshQueue()]);
             hideRefreshIndicator();
