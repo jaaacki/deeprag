@@ -89,7 +89,7 @@ class FileProcessorWorker(BaseWorker):
         super().__init__(queue_db, poll_interval)
         self.config = config
         self.metadata_client = metadata_client
-        self.error_dir = config.get('error_dir', '/watch/errors')
+        self.unprocessed_dir = config.get('unprocessed_dir', '/watch/unprocessed')
         self.destination_dir = config.get('destination_dir', '/destination')
 
     def process_one(self) -> bool:
@@ -107,7 +107,7 @@ class FileProcessorWorker(BaseWorker):
             movie_code = extract_movie_code(filename)
             if not movie_code:
                 logger.warning('[FileProcessor] No movie code in: %s', filename)
-                self._move_to_errors(file_path)
+                self._move_to_unprocessed(file_path)
                 self.queue_db.update_status(
                     item_id, 'error',
                     error_message=f'No movie code found in filename: {filename}',
@@ -126,7 +126,7 @@ class FileProcessorWorker(BaseWorker):
 
             if metadata is None:
                 logger.warning('[FileProcessor] No metadata for %s', movie_code)
-                self._move_to_errors(file_path)
+                self._move_to_unprocessed(file_path)
                 self.queue_db.update_status(
                     item_id, 'error',
                     error_message=f'No metadata found for movie code: {movie_code}',
@@ -188,12 +188,12 @@ class FileProcessorWorker(BaseWorker):
             )
             return True
 
-    def _move_to_errors(self, file_path: str) -> None:
-        """Move a file to the error directory."""
+    def _move_to_unprocessed(self, file_path: str) -> None:
+        """Move a file to the unprocessed directory."""
         import shutil
-        error_dir = Path(self.error_dir)
-        error_dir.mkdir(parents=True, exist_ok=True)
-        dest = error_dir / Path(file_path).name
+        unprocessed_dir = Path(self.unprocessed_dir)
+        unprocessed_dir.mkdir(parents=True, exist_ok=True)
+        dest = unprocessed_dir / Path(file_path).name
         try:
             shutil.move(file_path, str(dest))
             logger.info('[FileProcessor] Moved to errors: %s', dest)
@@ -217,6 +217,8 @@ class EmbyUpdaterWorker(BaseWorker):
         self.config = config
         self.emby_client = emby_client
         self.parent_folder_id = config.get('emby', {}).get('parent_folder_id', '')
+        self.emby_library_path = config.get('emby', {}).get('library_path', '/mnt/media/jpv')
+        self.destination_dir = config.get('destination_dir', '/destination')
 
     def process_one(self) -> bool:
         if not self.emby_client:
@@ -247,9 +249,11 @@ class EmbyUpdaterWorker(BaseWorker):
                 )
                 return True
 
-            # Step 2: Poll for the item with exponential backoff retry
-            logger.info('[EmbyUpdater] Polling for Emby item with retry: %s', new_path)
-            emby_item = self.emby_client.get_item_by_path_with_retry(new_path)
+            # Step 2: Translate path to Emby's view and poll for the item
+            # Our container sees /destination, but Emby sees /mnt/media/jpv (or configured path)
+            emby_path = new_path.replace(self.destination_dir, self.emby_library_path)
+            logger.info('[EmbyUpdater] Polling for Emby item with retry: %s (translated from %s)', emby_path, new_path)
+            emby_item = self.emby_client.get_item_by_path_with_retry(emby_path)
             if not emby_item:
                 logger.warning('[EmbyUpdater] Item not found in Emby after retries: %s', new_path)
                 self.queue_db.update_status(

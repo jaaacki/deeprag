@@ -30,7 +30,7 @@ def load_config() -> dict:
     return {
         'watch_dir': os.getenv('WATCH_DIR', '/watch'),
         'destination_dir': os.getenv('DESTINATION_DIR', '/destination'),
-        'error_dir': os.getenv('ERROR_DIR', '/watch/errors'),
+        'unprocessed_dir': os.getenv('UNPROCESSED_DIR', '/watch/unprocessed'),
         'video_extensions': os.getenv('VIDEO_EXTENSIONS', '.mp4,.mkv,.avi,.wmv').split(','),
         'api': {
             'base_url': os.getenv('API_BASE_URL', ''),
@@ -42,6 +42,7 @@ def load_config() -> dict:
             'api_key': os.getenv('EMBY_API_KEY', ''),
             'server_id': os.getenv('EMBY_SERVER_ID', ''),
             'library_id': os.getenv('EMBY_LIBRARY_ID', ''),
+            'library_path': os.getenv('EMBY_LIBRARY_PATH', '/mnt/media/jpv'),
             'parent_folder_id': os.getenv('EMBY_PARENT_FOLDER_ID', '4'),
             'trigger_scan': os.getenv('EMBY_TRIGGER_SCAN', 'true').lower() == 'true',
             'scan_wait_seconds': os.getenv('EMBY_SCAN_WAIT_SECONDS', '10'),
@@ -122,11 +123,29 @@ def main():
         logger.info('Enqueuing file: %s', file_path)
         queue_db.add(file_path)
 
+    # Scan watch directory on startup for existing files
+    watch_dir = config.get('watch_dir', '/watch')
+    extensions = config.get('video_extensions', ['.mp4', '.mkv', '.avi', '.wmv'])
+    unprocessed_dir = config.get('unprocessed_dir', '/watch/unprocessed')
+
+    logger.info('Scanning watch directory on startup: %s', watch_dir)
+    from pathlib import Path
+    watch_path = Path(watch_dir)
+    if watch_path.exists():
+        for ext in extensions:
+            for video_file in watch_path.glob(f'*{ext}'):
+                # Skip files in subdirectories (like unprocessed/)
+                if video_file.parent != watch_path:
+                    continue
+                file_path_str = str(video_file)
+                logger.info('Found existing file: %s', file_path_str)
+                enqueue_file(file_path_str)
+
     # Start watcher (now enqueues files instead of processing directly)
     stability_config = config.get('stability', {})
     observer = start_watcher(
-        watch_dir=config.get('watch_dir', '/watch'),
-        extensions=config.get('video_extensions', ['.mp4', '.mkv', '.avi', '.wmv']),
+        watch_dir=watch_dir,
+        extensions=extensions,
         stability_config=stability_config,
         callback=enqueue_file,
     )
