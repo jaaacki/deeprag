@@ -96,6 +96,8 @@ class DownloadManager:
             output_lines = []
             for line in proc.stdout:
                 line = line.rstrip()
+                if line:
+                    logger.info(f"[Download:{job.id}] {line}")
                 output_lines.append(line)
                 # Keep last 50 lines in memory
                 if len(output_lines) > 50:
