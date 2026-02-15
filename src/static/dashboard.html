@@ -113,8 +113,8 @@
                 <button class="btn btn-outline-primary" onclick="refreshData()">
                     <i class="bi bi-arrow-clockwise"></i> Refresh
                 </button>
-                <button class="btn btn-outline-secondary" onclick="toggleLogs()">
-                    <i class="bi bi-terminal"></i> Toggle Logs
+                <button class="btn btn-outline-secondary" onclick="toggleLogs()" id="toggleLogsBtn">
+                    <i class="bi bi-terminal"></i> Hide Logs
                 </button>
                 <button class="btn btn-outline-info" onclick="bulkRefreshMetadata()">
                     <i class="bi bi-cloud-download"></i> Bulk Refresh Metadata
@@ -156,8 +156,8 @@
             </div>
         </div>
 
-        <!-- Logs Section (Initially Hidden) -->
-        <div class="row mb-4" id="logsSection" style="display: none;">
+        <!-- Logs Section (Visible by Default) -->
+        <div class="row mb-4" id="logsSection" style="display: block;">
             <div class="col">
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
@@ -206,6 +206,10 @@
             // Load force fresh setting from localStorage
             const forceFresh = localStorage.getItem('forceFreshMetadata') === 'true';
             document.getElementById('forceFreshMetadata').checked = forceFresh;
+
+            // Start logs auto-refresh since logs are visible by default
+            refreshLogs();
+            startLogsAutoRefresh();
 
             // Event listeners
             document.getElementById('filterStatus').addEventListener('change', refreshQueue);
@@ -326,7 +330,7 @@
                                     <i class="bi bi-eye"></i>
                                 </button>
                                 <div class="btn-group" role="group">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" data-bs-auto-close="false" title="Actions">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" data-bs-auto-close="true" title="Actions">
                                         <i class="bi bi-three-dots-vertical"></i>
                                     </button>
                                     <ul class="dropdown-menu dropdown-menu-end">
@@ -534,12 +538,15 @@
         // Toggle logs section
         function toggleLogs() {
             const section = document.getElementById('logsSection');
+            const btn = document.getElementById('toggleLogsBtn');
             if (section.style.display === 'none') {
                 section.style.display = 'block';
+                btn.innerHTML = '<i class="bi bi-terminal"></i> Hide Logs';
                 refreshLogs();
                 startLogsAutoRefresh(); // Auto-refresh logs every 2 seconds
             } else {
                 section.style.display = 'none';
+                btn.innerHTML = '<i class="bi bi-terminal"></i> Show Logs';
                 stopLogsAutoRefresh(); // Stop refreshing when hidden
             }
         }

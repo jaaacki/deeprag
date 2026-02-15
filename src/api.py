@@ -607,10 +607,145 @@ async def action_rename_file(item_id: int):
 
 
 @app.post("/api/queue/{item_id}/actions/update-emby")
-async def action_update_emby(item_id: int):
-    """Re-trigger Emby scan and metadata update (alias for reprocess-metadata)."""
-    # Just call the existing endpoint
-    return await reprocess_metadata(item_id)
+async def action_update_emby(
+    item_id: int,
+    fresh: bool = Query(False, description="Force fresh metadata (bypass cache)")
+):
+    """Re-fetch metadata (optionally fresh) and update Emby."""
+    from .metadata import MetadataClient
+    from .emby_client import EmbyClient
+
+    fresh_text = " (FORCE FRESH)" if fresh else ""
+    logger.info(f"[API Action] Update Emby requested for item {item_id}{fresh_text}")
+    db = get_queue_db()
+    conn = db._get_conn()
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT movie_code, emby_item_id, status, new_path
+                FROM processing_queue WHERE id = %s
+            """, (item_id,))
+            row = cur.fetchone()
+            if not row:
+                logger.warning(f"[API Action] Item {item_id} not found")
+                raise HTTPException(status_code=404, detail="Item not found")
+
+            movie_code, emby_item_id, status, new_path = row
+
+            if not movie_code:
+                logger.warning(f"[API Action] Item {item_id} has no movie code")
+                raise HTTPException(
+                    status_code=400,
+                    detail="No movie code - run extract-code first"
+                )
+
+            # If item doesn't have emby_item_id and hasn't been moved, use old behavior
+            if not emby_item_id:
+                if status != 'completed':
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Item must be completed to update Emby (current: {status})"
+                    )
+                # Reset to moved state to trigger EmbyUpdater reprocessing
+                cur.execute("""
+                    UPDATE processing_queue
+                    SET status = 'moved', updated_at = NOW()
+                    WHERE id = %s
+                """, (item_id,))
+                conn.commit()
+                return {
+                    "success": True,
+                    "message": f"Item {item_id} reset to moved for Emby scan",
+                    "item_id": item_id,
+                }
+
+            logger.info(f"[API Action] Fetching metadata for: {movie_code}{fresh_text}")
+
+            # Fetch metadata (fresh or cached)
+            api_config = {
+                'base_url': os.getenv('API_BASE_URL', ''),
+                'token': os.getenv('API_TOKEN', ''),
+            }
+            metadata_client = MetadataClient(
+                base_url=api_config['base_url'],
+                token=api_config['token'],
+            )
+
+            metadata = metadata_client.search(movie_code, fresh=fresh)
+            if not metadata:
+                logger.warning(f"[API Action] No metadata found for {movie_code}")
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No metadata found for {movie_code}"
+                )
+
+            actress_list = metadata.get('actress', [])
+            actress = actress_list[0] if actress_list else 'Unknown'
+            title = metadata.get('title', '')
+            logger.info(f"[API Action] Metadata found: {actress} - {title[:50]}")
+
+            # Update metadata_json in database
+            cur.execute("""
+                UPDATE processing_queue
+                SET metadata_json = %s, updated_at = NOW()
+                WHERE id = %s
+            """, (json.dumps(metadata), item_id))
+            conn.commit()
+
+            # Update Emby directly using stored emby_item_id
+            emby_config = {
+                'base_url': os.getenv('EMBY_BASE_URL', ''),
+                'api_key': os.getenv('EMBY_API_KEY', ''),
+                'parent_folder_id': os.getenv('EMBY_PARENT_FOLDER_ID', '4'),
+                'user_id': os.getenv('EMBY_USER_ID', ''),
+            }
+
+            if emby_config['base_url'] and emby_config['api_key']:
+                emby_client = EmbyClient(
+                    base_url=emby_config['base_url'],
+                    api_key=emby_config['api_key'],
+                    parent_folder_id=emby_config['parent_folder_id'],
+                    user_id=emby_config['user_id'],
+                    wordpress_token=api_config['token'],
+                )
+
+                logger.info(f"[API Action] Updating Emby metadata for item {item_id} (Emby ID: {emby_item_id})")
+
+                # Update Emby metadata
+                update_success = emby_client.update_item_metadata(emby_item_id, metadata)
+
+                if update_success:
+                    logger.info(f"[API Action] Successfully updated Emby for item {item_id}")
+
+                    # Upload images (best-effort)
+                    image_url = metadata.get('image_cropped') or metadata.get('raw_image_url', '')
+                    if image_url:
+                        try:
+                            emby_client.upload_item_images(emby_item_id, image_url)
+                            logger.info(f"[API Action] Uploaded images for Emby item {emby_item_id}")
+                        except Exception as e:
+                            logger.warning(f"[API Action] Image upload failed for item {emby_item_id}: {e}")
+
+                    return {
+                        "success": True,
+                        "message": f"Updated Emby: {actress} - {title[:40]}",
+                        "actress": actress,
+                        "title": title,
+                    }
+                else:
+                    raise HTTPException(status_code=500, detail="Emby update failed")
+            else:
+                raise HTTPException(status_code=500, detail="Emby not configured")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.exception(f"[API Action] Failed to update Emby for item {item_id}")
+        raise HTTPException(status_code=500, detail=f"Emby update failed: {str(e)}")
+    finally:
+        db._put_conn(conn)
 
 
 @app.post("/api/queue/{item_id}/actions/full-retry")
