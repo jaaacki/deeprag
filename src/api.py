@@ -845,6 +845,30 @@ async def cleanup(older_than_days: int = Query(30, ge=1, le=365)):
         db._put_conn(conn)
 
 
+@app.post("/api/generate-preview")
+async def generate_preview():
+    """Trigger Emby video preview/trickplay generation scheduled task."""
+    from .emby_client import EmbyClient
+
+    emby_config = {
+        'base_url': os.getenv('EMBY_BASE_URL', ''),
+        'api_key': os.getenv('EMBY_API_KEY', ''),
+    }
+
+    if not emby_config['base_url'] or not emby_config['api_key']:
+        raise HTTPException(status_code=500, detail="Emby not configured")
+
+    emby_client = EmbyClient(
+        base_url=emby_config['base_url'],
+        api_key=emby_config['api_key'],
+    )
+
+    success = emby_client.generate_video_preview()
+    if success:
+        return {"success": True, "message": "Video preview generation task triggered"}
+    raise HTTPException(status_code=500, detail="Failed to trigger video preview task")
+
+
 @app.post("/api/bulk/refresh-metadata")
 async def bulk_refresh_metadata(
     status: Optional[str] = Query(None, description="Filter by status (default: completed)"),

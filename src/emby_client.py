@@ -571,3 +571,26 @@ class EmbyClient:
             logger.error('All image uploads failed for item %s', item_id)
 
         return any_success
+
+    def generate_video_preview(self) -> bool:
+        """Trigger the Emby scheduled task that generates video preview/trickplay images.
+
+        Returns:
+            True if the task was triggered successfully, False otherwise.
+        """
+        task_id = 'd15b3f9fc313609ffe7e49bd1c74f753'
+        url = f'{self.base_url}/emby/ScheduledTasks/Running/{task_id}'
+        headers = {
+            'X-Emby-Token': self.api_key,
+            'Content-Type': 'application/json',
+        }
+        try:
+            resp = requests.post(url, headers=headers, timeout=15)
+            if resp.status_code < 300:
+                logger.info('Video preview generation task triggered')
+                return True
+            logger.warning('Failed to trigger video preview task: %s %s', resp.status_code, resp.text[:200])
+            return False
+        except Exception as e:
+            logger.error('Error triggering video preview task: %s', e)
+            return False

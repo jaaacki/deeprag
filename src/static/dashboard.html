@@ -116,6 +116,9 @@
                 <button class="btn btn-outline-secondary" onclick="toggleLogs()" id="toggleLogsBtn">
                     <i class="bi bi-terminal"></i> Hide Logs
                 </button>
+                <button class="btn btn-outline-success" onclick="generatePreview()">
+                    <i class="bi bi-film"></i> Generate Preview
+                </button>
                 <button class="btn btn-outline-info" onclick="bulkRefreshMetadata()">
                     <i class="bi bi-cloud-download"></i> Bulk Refresh Metadata
                 </button>
@@ -561,6 +564,22 @@
             }
         }
 
+        // Generate video preview (Emby scheduled task)
+        async function generatePreview() {
+            showToast('Triggering video preview generation...', 'info');
+            try {
+                const response = await fetch(`${API_BASE}/api/generate-preview`, { method: 'POST' });
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    showToast('Video preview task started', 'success');
+                } else {
+                    showToast(result.detail || 'Failed to trigger preview', 'error');
+                }
+            } catch (error) {
+                showToast(`Error: ${error.message}`, 'error');
+            }
+        }
+
         // Cleanup old items
         async function triggerCleanup() {
             const days = prompt('Delete completed items older than how many days?', '30');
@@ -669,8 +688,7 @@
             toastContainer.insertAdjacentHTML('beforeend', toastHTML);
             const toastElement = document.getElementById(toastId);
 
-            // autohide: false - toasts stay until user clicks X
-            const toast = new bootstrap.Toast(toastElement, { autohide: false });
+            const toast = new bootstrap.Toast(toastElement, { autohide: true, delay: 4000 });
             toast.show();
 
             // Remove from DOM after user closes it
