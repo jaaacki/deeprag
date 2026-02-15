@@ -1,9 +1,11 @@
 #!/bin/sh
 # Start script for emby-processor with dashboard API
 
-# Load environment variables
+# Load environment variables (properly handle comments and empty lines)
 if [ -f /app/.env ]; then
-    export $(grep -v '^#' /app/.env | xargs)
+    set -a
+    . /app/.env
+    set +a
 fi
 
 # Start FastAPI dashboard in background
