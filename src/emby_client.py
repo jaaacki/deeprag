@@ -386,15 +386,22 @@ class EmbyClient:
                 timeout=30,
                 allow_redirects=True,
             )
-            resp.raise_for_status()
 
+            # WordPress media-crop endpoints return image data but with 404 status
+            # Accept response if we got valid image data, regardless of status code
             content_type = resp.headers.get('Content-Type', '')
-            if not content_type.startswith('image/'):
-                logger.warning('URL did not return an image (got %s): %s', content_type, image_url)
+            if content_type.startswith('image/') and len(resp.content) > 0:
+                logger.info('Downloaded image (%d bytes) from %s (status=%d)',
+                           len(resp.content), image_url, resp.status_code)
+                return resp.content, content_type
+
+            # If no valid image data, check status code and fail appropriately
+            if resp.status_code >= 400:
+                logger.warning('URL returned %d without image data: %s', resp.status_code, image_url)
                 return None
 
-            logger.info('Downloaded image (%d bytes) from %s', len(resp.content), image_url)
-            return resp.content, content_type
+            logger.warning('URL did not return an image (got %s): %s', content_type, image_url)
+            return None
         except requests.RequestException as e:
             logger.error('Failed to download image from %s: %s', image_url, e)
             return None
