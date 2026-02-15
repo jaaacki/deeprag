@@ -92,6 +92,7 @@ def main():
             api_key=emby_config['api_key'],
             parent_folder_id=emby_config.get('parent_folder_id', '4'),
             user_id=emby_config.get('user_id', ''),
+            wordpress_token=api_config.get('token', ''),
             retry_delays=emby_config.get('scan_retry_delays'),
         )
         logger.info('Emby client initialized (parent_folder_id=%s)', emby_config.get('parent_folder_id'))

@@ -20,7 +20,7 @@ class EmbyClient:
     """Client for Emby server API operations."""
 
     def __init__(self, base_url: str, api_key: str, parent_folder_id: str = '',
-                 user_id: str = '', retry_delays: list[int] | None = None):
+                 user_id: str = '', wordpress_token: str = '', retry_delays: list[int] | None = None):
         """Initialize Emby client.
 
         Args:
@@ -28,12 +28,14 @@ class EmbyClient:
             api_key: Emby API token
             parent_folder_id: Parent folder ID for the main video library (e.g., '4')
             user_id: Emby user ID for API calls (required for item access)
+            wordpress_token: WordPress API token for downloading images (required for WordPress image URLs)
             retry_delays: List of delay seconds for retry attempts. Defaults to [2,4,8,16,32,64].
         """
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
         self.parent_folder_id = parent_folder_id
         self.user_id = user_id
+        self.wordpress_token = wordpress_token
         self.retry_delays = retry_delays if retry_delays is not None else DEFAULT_RETRY_DELAYS
 
     def trigger_library_scan(self, path: str | None = None) -> bool:
@@ -368,12 +370,19 @@ class EmbyClient:
             return None
 
         try:
+            # Build headers - add WordPress auth if URL is from WordPress
+            headers = {
+                'User-Agent': 'Mozilla/5.0',
+                'Accept': 'image/*,*/*;q=0.8',
+            }
+
+            # Add WordPress Bearer token if downloading from WordPress domain
+            if self.wordpress_token and 'familyhub.id' in image_url:
+                headers['Authorization'] = f'Bearer {self.wordpress_token}'
+
             resp = requests.get(
                 image_url,
-                headers={
-                    'User-Agent': 'Mozilla/5.0',
-                    'Accept': 'image/*,*/*;q=0.8',
-                },
+                headers=headers,
                 timeout=30,
                 allow_redirects=True,
             )
