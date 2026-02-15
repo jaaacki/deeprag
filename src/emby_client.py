@@ -290,7 +290,16 @@ class EmbyClient:
             return False
 
         # Build updated metadata
-        emby_item['Name'] = metadata.get('title', '')  # Display title in Emby
+        # Name: Extract from file path (filename without extension), matching legacy behavior
+        file_path = emby_item.get('Path', '')
+        if file_path:
+            # Extract filename without extension: /path/to/file.mp4 -> file
+            filename = file_path.replace('\\', '/').split('/')[-1]  # Get last part
+            name_without_ext = filename.rsplit('.', 1)[0]  # Remove extension
+            emby_item['Name'] = name_without_ext
+            emby_item['SortName'] = name_without_ext  # Same as Name
+            emby_item['ForcedSortName'] = name_without_ext  # Same as Name
+
         emby_item['OriginalTitle'] = metadata.get('original_title', '')  # Japanese title
         emby_item['Overview'] = metadata.get('overview', '')
         emby_item['PreferredMetadataLanguage'] = 'en'
