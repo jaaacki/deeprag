@@ -153,20 +153,7 @@
                         <!-- Recent Downloads -->
                         <div id="recentDownloads" class="mt-3" style="display: none;">
                             <h6 class="text-muted mb-2">Recent Downloads</h6>
-                            <div class="table-responsive">
-                                <table class="table table-sm table-bordered mb-0" style="font-size: 0.8rem;">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>ID</th>
-                                            <th>URL</th>
-                                            <th>Filename</th>
-                                            <th>Status</th>
-                                            <th>Started</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="downloadsTableBody"></tbody>
-                                </table>
-                            </div>
+                            <div id="downloadsListContainer"></div>
                         </div>
                     </div>
                 </div>
@@ -821,26 +808,74 @@
                 const response = await fetch(`${API_BASE}/api/downloads?limit=10`);
                 const data = await response.json();
 
-                const container = document.getElementById('recentDownloads');
-                const tbody = document.getElementById('downloadsTableBody');
+                const wrapper = document.getElementById('recentDownloads');
+                const container = document.getElementById('downloadsListContainer');
 
                 if (!data.jobs || data.jobs.length === 0) {
-                    container.style.display = 'none';
+                    wrapper.style.display = 'none';
                     return;
                 }
 
-                container.style.display = 'block';
-                tbody.innerHTML = data.jobs.map(job => `
-                    <tr>
-                        <td><code>${job.id}</code></td>
-                        <td class="text-truncate" style="max-width: 300px;" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</td>
-                        <td>${job.filename ? escapeHtml(job.filename) : '<span class="text-muted">auto</span>'}</td>
-                        <td>${getDownloadStatusBadge(job.status)}</td>
-                        <td><small>${job.started_at ? formatDate(job.started_at) : '-'}</small></td>
-                    </tr>
-                `).join('');
+                wrapper.style.display = 'block';
+                container.innerHTML = data.jobs.map(job => {
+                    const lastLine = job.output_tail && job.output_tail.length > 0
+                        ? escapeHtml(job.output_tail[job.output_tail.length - 1])
+                        : '';
+                    const borderClass = {
+                        'queued': 'border-secondary',
+                        'downloading': 'border-primary',
+                        'completed': 'border-success',
+                        'failed': 'border-danger',
+                    }[job.status] || 'border-secondary';
+
+                    let progressHtml = '';
+                    if (job.status === 'downloading' && lastLine) {
+                        progressHtml = `<div class="mt-1 font-monospace text-primary" style="font-size:0.75rem;">${lastLine}</div>`;
+                    } else if (job.status === 'failed') {
+                        progressHtml = `<div class="mt-1 text-danger" style="font-size:0.75rem;">${escapeHtml(job.error || 'Unknown error')}</div>`;
+                    }
+
+                    const hasOutput = job.output_tail && job.output_tail.length > 0;
+                    const outputId = `dl-output-${job.id}`;
+
+                    return `
+                        <div class="card mb-2 ${borderClass}" style="font-size: 0.8rem;">
+                            <div class="card-body py-2 px-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div class="flex-grow-1 me-2" style="min-width:0;">
+                                        <span class="text-truncate d-block" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</span>
+                                        ${job.filename ? `<small class="text-muted">Filename: ${escapeHtml(job.filename)}</small>` : ''}
+                                    </div>
+                                    <div class="text-end text-nowrap ms-2">
+                                        ${getDownloadStatusBadge(job.status)}
+                                        <br><small class="text-muted">${job.started_at ? formatDate(job.started_at) : 'queued'}</small>
+                                    </div>
+                                </div>
+                                ${progressHtml}
+                                ${hasOutput ? `
+                                    <div class="mt-1">
+                                        <a href="#" class="small text-decoration-none" onclick="toggleDownloadOutput('${outputId}', event)">
+                                            <i class="bi bi-terminal"></i> Show output
+                                        </a>
+                                        <pre id="${outputId}" class="bg-dark text-light p-2 rounded mt-1 mb-0" style="display:none; font-size:0.7rem; max-height:200px; overflow-y:auto; white-space:pre-wrap;">${job.output_tail.map(l => escapeHtml(l)).join('\n')}</pre>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
             } catch (error) {
                 console.error('Failed to fetch downloads:', error);
+            }
+        }
+
+        function toggleDownloadOutput(id, event) {
+            if (event) event.preventDefault();
+            const el = document.getElementById(id);
+            if (el) {
+                const isHidden = el.style.display === 'none';
+                el.style.display = isHidden ? 'block' : 'none';
+                if (isHidden) el.scrollTop = el.scrollHeight;
             }
         }
 
