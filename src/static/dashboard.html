@@ -195,9 +195,31 @@
         let autoRefreshInterval;
         let logsRefreshInterval;
         const API_BASE = '';
+        let embyPublicUrl = '';
+        let embyServerId = '';
+
+        // Load config (Emby URL, server ID)
+        async function loadConfig() {
+            try {
+                const res = await fetch(`${API_BASE}/api/config`);
+                const data = await res.json();
+                embyPublicUrl = (data.emby_public_url || '').replace(/\/+$/, '');
+                embyServerId = data.emby_server_id || '';
+            } catch (e) {
+                console.warn('Failed to load config:', e);
+            }
+        }
+
+        function getEmbyItemUrl(embyItemId) {
+            if (!embyPublicUrl || !embyItemId) return '';
+            let url = `${embyPublicUrl}/web/index.html#!/item?id=${embyItemId}`;
+            if (embyServerId) url += `&serverId=${embyServerId}`;
+            return url;
+        }
 
         // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
+            await loadConfig();
             refreshData();
             startAutoRefresh();
 
@@ -327,6 +349,9 @@
                                 <button class="btn btn-sm btn-outline-info action-btn" onclick="viewDetails(${item.id})" title="View Details">
                                     <i class="bi bi-eye"></i>
                                 </button>
+                                ${item.emby_item_id && embyPublicUrl ? `<a class="btn btn-sm btn-outline-success action-btn" href="${getEmbyItemUrl(item.emby_item_id)}" target="_blank" title="Open in Emby">
+                                    <i class="bi bi-tv"></i>
+                                </a>` : ''}
                                 <div class="btn-group" role="group">
                                     <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" data-bs-auto-close="true" title="Actions">
                                         <i class="bi bi-three-dots-vertical"></i>

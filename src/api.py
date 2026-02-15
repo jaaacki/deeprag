@@ -103,6 +103,15 @@ async def dashboard():
     return HTMLResponse(content=dashboard_path.read_text())
 
 
+@app.get("/api/config")
+async def get_config():
+    """Get frontend configuration (Emby public URL, server ID)."""
+    return {
+        "emby_public_url": os.getenv('EMBY_PUBLIC_URL', ''),
+        "emby_server_id": os.getenv('EMBY_SERVER_ID', ''),
+    }
+
+
 @app.get("/api/health")
 async def health():
     """Get system health status."""
