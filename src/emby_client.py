@@ -290,7 +290,8 @@ class EmbyClient:
             return False
 
         # Build updated metadata
-        emby_item['OriginalTitle'] = metadata.get('original_title', '')
+        emby_item['Name'] = metadata.get('title', '')  # Display title in Emby
+        emby_item['OriginalTitle'] = metadata.get('original_title', '')  # Japanese title
         emby_item['Overview'] = metadata.get('overview', '')
         emby_item['PreferredMetadataLanguage'] = 'en'
         emby_item['PreferredMetadataCountryCode'] = 'JP'
