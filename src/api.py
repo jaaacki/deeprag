@@ -59,6 +59,8 @@ def get_queue_db() -> QueueDB:
 @app.on_event("startup")
 async def startup_event():
     """Initialize database connection on startup."""
+    # Initialize log buffer to capture API logs
+    get_log_buffer()
     get_queue_db()
     logger.info("FastAPI dashboard started")
 
@@ -357,6 +359,7 @@ async def action_extract_code(item_id: int):
     """Re-extract movie code and subtitle from filename."""
     from .extractor import extract_movie_code, detect_subtitle
 
+    logger.info(f"[API Action] Extract code requested for item {item_id}")
     db = get_queue_db()
     conn = db._get_conn()
 
@@ -365,20 +368,25 @@ async def action_extract_code(item_id: int):
             cur.execute("SELECT file_path FROM processing_queue WHERE id = %s", (item_id,))
             row = cur.fetchone()
             if not row:
+                logger.warning(f"[API Action] Item {item_id} not found")
                 raise HTTPException(status_code=404, detail="Item not found")
 
             file_path = row[0]
             filename = Path(file_path).name
+            logger.info(f"[API Action] Extracting from filename: {filename}")
 
             # Extract code and subtitle
             movie_code = extract_movie_code(filename)
             subtitle = detect_subtitle(filename)
 
             if not movie_code:
+                logger.warning(f"[API Action] No movie code found in: {filename}")
                 raise HTTPException(
                     status_code=400,
                     detail=f"No movie code found in filename: {filename}"
                 )
+
+            logger.info(f"[API Action] Extracted: {movie_code}, subtitle: {subtitle}")
 
             # Update database
             cur.execute("""
@@ -387,6 +395,8 @@ async def action_extract_code(item_id: int):
                 WHERE id = %s
             """, (movie_code, subtitle, item_id))
             conn.commit()
+
+            logger.info(f"[API Action] Item {item_id} updated with code: {movie_code}")
 
             return {
                 "success": True,
@@ -398,7 +408,7 @@ async def action_extract_code(item_id: int):
         raise
     except Exception as e:
         conn.rollback()
-        logger.exception(f"Failed to extract code for item {item_id}")
+        logger.exception(f"[API Action] Failed to extract code for item {item_id}")
         raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
     finally:
         db._put_conn(conn)
@@ -409,6 +419,7 @@ async def action_fetch_metadata(item_id: int):
     """Re-fetch metadata from WordPress API."""
     from .metadata import MetadataClient
 
+    logger.info(f"[API Action] Fetch metadata requested for item {item_id}")
     db = get_queue_db()
     conn = db._get_conn()
 
@@ -417,14 +428,18 @@ async def action_fetch_metadata(item_id: int):
             cur.execute("SELECT movie_code FROM processing_queue WHERE id = %s", (item_id,))
             row = cur.fetchone()
             if not row:
+                logger.warning(f"[API Action] Item {item_id} not found")
                 raise HTTPException(status_code=404, detail="Item not found")
 
             movie_code = row[0]
             if not movie_code:
+                logger.warning(f"[API Action] Item {item_id} has no movie code")
                 raise HTTPException(
                     status_code=400,
                     detail="No movie code - run extract-code first"
                 )
+
+            logger.info(f"[API Action] Fetching metadata for: {movie_code}")
 
             # Fetch metadata
             api_config = {
@@ -440,10 +455,15 @@ async def action_fetch_metadata(item_id: int):
 
             metadata = metadata_client.search(movie_code)
             if not metadata:
+                logger.warning(f"[API Action] No metadata found for {movie_code}")
                 raise HTTPException(
                     status_code=404,
                     detail=f"No metadata found for {movie_code}"
                 )
+
+            actress_list = metadata.get('actress', [])
+            actress = actress_list[0] if actress_list else 'Unknown'
+            logger.info(f"[API Action] Metadata found: {actress} - {metadata.get('title', '')[:50]}")
 
             # Update database
             cur.execute("""
@@ -453,8 +473,8 @@ async def action_fetch_metadata(item_id: int):
             """, (json.dumps(metadata), item_id))
             conn.commit()
 
-            actress_list = metadata.get('actress', [])
-            actress = actress_list[0] if actress_list else 'Unknown'
+            logger.info(f"[API Action] Item {item_id} metadata updated")
+
             title = metadata.get('title', '')[:50] + '...'
 
             return {
@@ -467,7 +487,7 @@ async def action_fetch_metadata(item_id: int):
         raise
     except Exception as e:
         conn.rollback()
-        logger.exception(f"Failed to fetch metadata for item {item_id}")
+        logger.exception(f"[API Action] Failed to fetch metadata for item {item_id}")
         raise HTTPException(status_code=500, detail=f"Metadata fetch failed: {str(e)}")
     finally:
         db._put_conn(conn)
@@ -478,6 +498,7 @@ async def action_rename_file(item_id: int):
     """Re-rename and move file using current metadata."""
     from .renamer import build_filename, move_file
 
+    logger.info(f"[API Action] Rename/move file requested for item {item_id}")
     db = get_queue_db()
     conn = db._get_conn()
 
@@ -489,11 +510,13 @@ async def action_rename_file(item_id: int):
             """, (item_id,))
             row = cur.fetchone()
             if not row:
+                logger.warning(f"[API Action] Item {item_id} not found")
                 raise HTTPException(status_code=404, detail="Item not found")
 
             file_path, movie_code, subtitle, metadata_json = row
 
             if not metadata_json:
+                logger.warning(f"[API Action] Item {item_id} has no metadata")
                 raise HTTPException(
                     status_code=400,
                     detail="No metadata - run fetch-metadata first"
@@ -507,6 +530,7 @@ async def action_rename_file(item_id: int):
 
             # Check if file exists
             if not Path(file_path).exists():
+                logger.warning(f"[API Action] File not found: {file_path}")
                 raise HTTPException(
                     status_code=400,
                     detail=f"File not found: {file_path}"
@@ -527,10 +551,14 @@ async def action_rename_file(item_id: int):
                     title = title[1:].strip()
             title = title.title()
 
+            logger.info(f"[API Action] Building filename for: {actress} - {api_code}")
+
             # Build filename and move
             destination_dir = os.getenv('DESTINATION_DIR', '/destination')
             extension = Path(file_path).suffix
             new_filename = build_filename(actress, subtitle, api_code, title, extension)
+
+            logger.info(f"[API Action] Moving file: {Path(file_path).name} -> {actress}/{new_filename}")
             new_path = move_file(file_path, destination_dir, actress, new_filename)
 
             # Update database
@@ -541,6 +569,8 @@ async def action_rename_file(item_id: int):
             """, (new_path, actress, item_id))
             conn.commit()
 
+            logger.info(f"[API Action] Item {item_id} moved successfully to: {new_path}")
+
             return {
                 "success": True,
                 "message": f"Moved to: {actress}/{new_filename[:40]}...",
@@ -550,7 +580,7 @@ async def action_rename_file(item_id: int):
         raise
     except Exception as e:
         conn.rollback()
-        logger.exception(f"Failed to rename/move file for item {item_id}")
+        logger.exception(f"[API Action] Failed to rename/move file for item {item_id}")
         raise HTTPException(status_code=500, detail=f"File move failed: {str(e)}")
     finally:
         db._put_conn(conn)
