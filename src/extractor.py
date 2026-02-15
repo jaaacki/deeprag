@@ -10,6 +10,7 @@ MOVIE_CODE_RE = re.compile(r'([A-Za-z]{2,6})-(\d{1,5})')
 # Subtitle keyword mapping (checked in order, first match wins)
 SUBTITLE_KEYWORDS = [
     (re.compile(r'english\s*sub(?:bed|s|title[ds]?)?', re.IGNORECASE), 'English Sub'),
+    (re.compile(r'\benglish\b', re.IGNORECASE), 'English Sub'),
     (re.compile(r'\beng\b', re.IGNORECASE), 'English Sub'),
     (re.compile(r'chinese\s*sub(?:bed|s|title[ds]?)?', re.IGNORECASE), 'Chinese Sub'),
     (re.compile(r'\bchi\b', re.IGNORECASE), 'Chinese Sub'),
