@@ -41,6 +41,7 @@ def load_config() -> dict:
             'base_url': os.getenv('EMBY_BASE_URL', ''),
             'api_key': os.getenv('EMBY_API_KEY', ''),
             'server_id': os.getenv('EMBY_SERVER_ID', ''),
+            'user_id': os.getenv('EMBY_USER_ID', ''),
             'library_id': os.getenv('EMBY_LIBRARY_ID', ''),
             'library_path': os.getenv('EMBY_LIBRARY_PATH', '/mnt/media/jpv'),
             'parent_folder_id': os.getenv('EMBY_PARENT_FOLDER_ID', '4'),
@@ -90,6 +91,7 @@ def main():
             base_url=emby_config['base_url'],
             api_key=emby_config['api_key'],
             parent_folder_id=emby_config.get('parent_folder_id', '4'),
+            user_id=emby_config.get('user_id', ''),
             retry_delays=emby_config.get('scan_retry_delays'),
         )
         logger.info('Emby client initialized (parent_folder_id=%s)', emby_config.get('parent_folder_id'))

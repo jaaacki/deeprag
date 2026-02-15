@@ -20,18 +20,20 @@ class EmbyClient:
     """Client for Emby server API operations."""
 
     def __init__(self, base_url: str, api_key: str, parent_folder_id: str = '',
-                 retry_delays: list[int] | None = None):
+                 user_id: str = '', retry_delays: list[int] | None = None):
         """Initialize Emby client.
 
         Args:
             base_url: Emby server URL (e.g., 'https://emby.familyhub.id' or 'http://emby:8096')
             api_key: Emby API token
             parent_folder_id: Parent folder ID for the main video library (e.g., '4')
+            user_id: Emby user ID for API calls (required for item access)
             retry_delays: List of delay seconds for retry attempts. Defaults to [2,4,8,16,32,64].
         """
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
         self.parent_folder_id = parent_folder_id
+        self.user_id = user_id
         self.retry_delays = retry_delays if retry_delays is not None else DEFAULT_RETRY_DELAYS
 
     def trigger_library_scan(self, path: str | None = None) -> bool:
@@ -250,7 +252,11 @@ class EmbyClient:
         Returns:
             Full item dict, or None on error.
         """
-        url = f'{self.base_url}/Items/{item_id}'
+        # Use Users endpoint for item access (required by Emby API)
+        if self.user_id:
+            url = f'{self.base_url}/Users/{self.user_id}/Items/{item_id}'
+        else:
+            url = f'{self.base_url}/Items/{item_id}'
         headers = {'X-Emby-Token': self.api_key}
 
         try:
