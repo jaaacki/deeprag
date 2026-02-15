@@ -59,10 +59,22 @@ def get_queue_db() -> QueueDB:
 @app.on_event("startup")
 async def startup_event():
     """Initialize database connection on startup."""
+    # Configure logging for the API process
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        force=True,  # Override existing config
+    )
+
     # Initialize log buffer to capture API logs
-    get_log_buffer()
+    log_buffer = get_log_buffer()
+
+    # Initialize database
     get_queue_db()
-    logger.info("FastAPI dashboard started")
+
+    logger.info("FastAPI dashboard started with logging configured")
+    logger.info(f"Log buffer initialized with {len(log_buffer.buffer)} entries")
 
 
 @app.on_event("shutdown")
