@@ -16,5 +16,11 @@ RUN echo "0 */20 * * * /app/scripts/refresh-token-internal.sh >> /app/logs/token
 # Create logs directory
 RUN mkdir -p /app/logs
 
-# Start cron and main application
-CMD cron && python main.py
+# Make start script executable
+RUN chmod +x /app/start.sh
+
+# Expose dashboard port
+EXPOSE 8000
+
+# Start cron, API server, and main application
+CMD cron && /app/start.sh

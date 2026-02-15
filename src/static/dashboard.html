@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emby Processor Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; padding-top: 20px; }
+        .stat-card { transition: transform 0.2s; }
+        .stat-card:hover { transform: translateY(-5px); }
+        .stat-value { font-size: 2.5rem; font-weight: bold; }
+        .stat-label { color: #6c757d; text-transform: uppercase; font-size: 0.875rem; }
+        .status-badge { font-size: 0.75rem; padding: 0.25rem 0.5rem; }
+        .log-viewer { background: #212529; color: #f8f9fa; font-family: 'Courier New', monospace; font-size: 0.875rem; height: 400px; overflow-y: auto; padding: 1rem; border-radius: 0.375rem; }
+        .queue-table { font-size: 0.875rem; }
+        .action-btn { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+        #refreshIndicator { display: none; }
+        #refreshIndicator.active { display: inline-block; }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col">
+                <h1><i class="bi bi-hdd-network"></i> Emby Processor Dashboard</h1>
+                <p class="text-muted">Real-time queue monitoring and control panel
+                    <span id="refreshIndicator" class="spinner-border spinner-border-sm ms-2"></span>
+                    <span id="lastUpdate" class="ms-2 text-muted"></span>
+                </p>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="row mb-4" id="statsCards">
+            <div class="col-md-2">
+                <div class="card stat-card border-primary">
+                    <div class="card-body text-center">
+                        <div class="stat-value text-primary" id="stat-total">-</div>
+                        <div class="stat-label">Total</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stat-card border-success">
+                    <div class="card-body text-center">
+                        <div class="stat-value text-success" id="stat-completed">-</div>
+                        <div class="stat-label">Completed</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stat-card border-warning">
+                    <div class="card-body text-center">
+                        <div class="stat-value text-warning" id="stat-pending">-</div>
+                        <div class="stat-label">Pending</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stat-card border-info">
+                    <div class="card-body text-center">
+                        <div class="stat-value text-info" id="stat-processing">-</div>
+                        <div class="stat-label">Processing</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stat-card border-danger">
+                    <div class="card-body text-center">
+                        <div class="stat-value text-danger" id="stat-error">-</div>
+                        <div class="stat-label">Errors</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stat-card border-secondary">
+                    <div class="card-body text-center">
+                        <div class="stat-value text-secondary" id="stat-moved">-</div>
+                        <div class="stat-label">Moved</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters and Actions -->
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <select class="form-select" id="filterStatus">
+                    <option value="">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="processing">Processing</option>
+                    <option value="moved">Moved</option>
+                    <option value="emby_pending">Emby Pending</option>
+                    <option value="completed">Completed</option>
+                    <option value="error">Error</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <input type="text" class="form-control" id="searchQuery" placeholder="Search movie code or actress">
+            </div>
+            <div class="col-md-6 text-end">
+                <button class="btn btn-outline-primary" onclick="refreshData()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+                <button class="btn btn-outline-secondary" onclick="toggleLogs()">
+                    <i class="bi bi-terminal"></i> Toggle Logs
+                </button>
+                <button class="btn btn-outline-danger" onclick="triggerCleanup()">
+                    <i class="bi bi-trash"></i> Cleanup Old Items
+                </button>
+            </div>
+        </div>
+
+        <!-- Queue Table -->
+        <div class="row mb-4">
+            <div class="col">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-list-ul"></i> Queue Items (<span id="queueCount">0</span>)</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover queue-table mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Movie Code</th>
+                                        <th>Actress</th>
+                                        <th>Status</th>
+                                        <th>Emby ID</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="queueTableBody">
+                                    <tr><td colspan="7" class="text-center">Loading...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Section (Initially Hidden) -->
+        <div class="row mb-4" id="logsSection" style="display: none;">
+            <div class="col">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-terminal-fill"></i> Live Logs</h5>
+                        <button class="btn btn-sm btn-outline-light" onclick="refreshLogs()">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="log-viewer" id="logViewer">Loading logs...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Item Detail Modal -->
+    <div class="modal fade" id="itemDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Item Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="itemDetailBody">
+                    Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let autoRefreshInterval;
+        const API_BASE = '';
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshData();
+            startAutoRefresh();
+
+            // Event listeners
+            document.getElementById('filterStatus').addEventListener('change', refreshQueue);
+            document.getElementById('searchQuery').addEventListener('input', debounce(refreshQueue, 500));
+        });
+
+        // Auto-refresh every 5 seconds
+        function startAutoRefresh() {
+            autoRefreshInterval = setInterval(refreshData, 5000);
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+        }
+
+        // Refresh all data
+        async function refreshData() {
+            showRefreshIndicator();
+            await Promise.all([refreshStats(), refreshQueue()]);
+            hideRefreshIndicator();
+            updateLastUpdateTime();
+        }
+
+        // Fetch and update stats
+        async function refreshStats() {
+            try {
+                const response = await fetch(`${API_BASE}/api/stats`);
+                const data = await response.json();
+
+                document.getElementById('stat-total').textContent = data.total || 0;
+                document.getElementById('stat-completed').textContent = data.completed || 0;
+                document.getElementById('stat-pending').textContent = data.pending || 0;
+                document.getElementById('stat-processing').textContent = data.processing || 0;
+                document.getElementById('stat-error').textContent = data.error || 0;
+                document.getElementById('stat-moved').textContent = data.moved || 0;
+            } catch (error) {
+                console.error('Failed to fetch stats:', error);
+            }
+        }
+
+        // Fetch and update queue table
+        async function refreshQueue() {
+            const status = document.getElementById('filterStatus').value;
+            const search = document.getElementById('searchQuery').value;
+
+            const params = new URLSearchParams();
+            if (status) params.append('status', status);
+            if (search) params.append('search', search);
+            params.append('limit', '50');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/queue?${params}`);
+                const data = await response.json();
+
+                document.getElementById('queueCount').textContent = data.total;
+
+                const tbody = document.getElementById('queueTableBody');
+                if (data.items.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No items found</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.items.map(item => `
+                    <tr>
+                        <td><code>${item.id}</code></td>
+                        <td><strong>${item.movie_code || '-'}</strong></td>
+                        <td>${item.actress || '-'}</td>
+                        <td>${getStatusBadge(item.status)}</td>
+                        <td>${item.emby_item_id ? `<code>${item.emby_item_id}</code>` : '-'}</td>
+                        <td><small>${formatDate(item.created_at)}</small></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-info action-btn" onclick="viewDetails(${item.id})">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            ${item.status === 'error' ? `
+                                <button class="btn btn-sm btn-outline-warning action-btn" onclick="retryItem(${item.id})">
+                                    <i class="bi bi-arrow-clockwise"></i>
+                                </button>
+                            ` : ''}
+                            ${item.status === 'completed' ? `
+                                <button class="btn btn-sm btn-outline-secondary action-btn" onclick="reprocessMetadata(${item.id})">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                </button>
+                            ` : ''}
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to fetch queue:', error);
+                document.getElementById('queueTableBody').innerHTML =
+                    '<tr><td colspan="7" class="text-center text-danger">Error loading queue</td></tr>';
+            }
+        }
+
+        // View item details
+        async function viewDetails(itemId) {
+            const modal = new bootstrap.Modal(document.getElementById('itemDetailModal'));
+            const body = document.getElementById('itemDetailBody');
+
+            body.innerHTML = 'Loading...';
+            modal.show();
+
+            try {
+                const response = await fetch(`${API_BASE}/api/queue/${itemId}`);
+                const item = await response.json();
+
+                body.innerHTML = `
+                    <dl class="row">
+                        <dt class="col-sm-3">ID</dt>
+                        <dd class="col-sm-9"><code>${item.id}</code></dd>
+
+                        <dt class="col-sm-3">Movie Code</dt>
+                        <dd class="col-sm-9"><strong>${item.movie_code || '-'}</strong></dd>
+
+                        <dt class="col-sm-3">Actress</dt>
+                        <dd class="col-sm-9">${item.actress || '-'}</dd>
+
+                        <dt class="col-sm-3">Subtitle</dt>
+                        <dd class="col-sm-9">${item.subtitle || '-'}</dd>
+
+                        <dt class="col-sm-3">Status</dt>
+                        <dd class="col-sm-9">${getStatusBadge(item.status)}</dd>
+
+                        <dt class="col-sm-3">Original Path</dt>
+                        <dd class="col-sm-9"><code class="small">${item.file_path}</code></dd>
+
+                        <dt class="col-sm-3">New Path</dt>
+                        <dd class="col-sm-9"><code class="small">${item.new_path || '-'}</code></dd>
+
+                        <dt class="col-sm-3">Emby Item ID</dt>
+                        <dd class="col-sm-9"><code>${item.emby_item_id || '-'}</code></dd>
+
+                        <dt class="col-sm-3">Retry Count</dt>
+                        <dd class="col-sm-9">${item.retry_count} / 4</dd>
+
+                        ${item.error_message ? `
+                            <dt class="col-sm-3">Error</dt>
+                            <dd class="col-sm-9"><span class="text-danger">${item.error_message}</span></dd>
+                        ` : ''}
+
+                        <dt class="col-sm-3">Created</dt>
+                        <dd class="col-sm-9">${formatDate(item.created_at)}</dd>
+
+                        <dt class="col-sm-3">Updated</dt>
+                        <dd class="col-sm-9">${formatDate(item.updated_at)}</dd>
+
+                        ${item.metadata_json ? `
+                            <dt class="col-sm-3">Metadata</dt>
+                            <dd class="col-sm-9">
+                                <pre class="bg-light p-2 rounded" style="max-height: 300px; overflow-y: auto; font-size: 0.75rem;">${JSON.stringify(item.metadata_json, null, 2)}</pre>
+                            </dd>
+                        ` : ''}
+                    </dl>
+                `;
+            } catch (error) {
+                body.innerHTML = `<div class="alert alert-danger">Error loading item details: ${error.message}</div>`;
+            }
+        }
+
+        // Retry failed item
+        async function retryItem(itemId) {
+            if (!confirm(`Retry item ${itemId}?`)) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/queue/${itemId}/retry`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    alert(`Item ${itemId} reset for retry`);
+                    refreshData();
+                } else {
+                    alert(`Failed to retry item: ${result.message}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        // Reprocess metadata
+        async function reprocessMetadata(itemId) {
+            if (!confirm(`Reprocess metadata for item ${itemId}? This will re-fetch from WordPress and update Emby.`)) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/queue/${itemId}/reprocess-metadata`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    alert(`Item ${itemId} queued for metadata reprocessing`);
+                    refreshData();
+                } else {
+                    alert(`Failed: ${result.message}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        // Cleanup old items
+        async function triggerCleanup() {
+            const days = prompt('Delete completed items older than how many days?', '30');
+            if (!days || isNaN(days)) return;
+
+            if (!confirm(`Delete all completed items older than ${days} days?`)) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/cleanup?older_than_days=${days}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                alert(`Deleted ${result.deleted_count} items`);
+                refreshData();
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        // Toggle logs section
+        function toggleLogs() {
+            const section = document.getElementById('logsSection');
+            if (section.style.display === 'none') {
+                section.style.display = 'block';
+                refreshLogs();
+            } else {
+                section.style.display = 'none';
+            }
+        }
+
+        // Refresh logs
+        async function refreshLogs() {
+            try {
+                const response = await fetch(`${API_BASE}/api/logs?lines=100`);
+                const data = await response.json();
+
+                const viewer = document.getElementById('logViewer');
+                viewer.innerHTML = data.lines.map(line =>
+                    `<div>${escapeHtml(line)}</div>`
+                ).join('');
+                viewer.scrollTop = viewer.scrollHeight;
+            } catch (error) {
+                document.getElementById('logViewer').innerHTML = `<div class="text-danger">Error loading logs: ${error.message}</div>`;
+            }
+        }
+
+        // Helper functions
+        function getStatusBadge(status) {
+            const badges = {
+                'pending': 'warning',
+                'processing': 'info',
+                'moved': 'secondary',
+                'emby_pending': 'secondary',
+                'completed': 'success',
+                'error': 'danger'
+            };
+            return `<span class="badge bg-${badges[status] || 'secondary'} status-badge">${status}</span>`;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleString();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showRefreshIndicator() {
+            document.getElementById('refreshIndicator').classList.add('active');
+        }
+
+        function hideRefreshIndicator() {
+            document.getElementById('refreshIndicator').classList.remove('active');
+        }
+
+        function updateLastUpdateTime() {
+            document.getElementById('lastUpdate').textContent =
+                `Last updated: ${new Date().toLocaleTimeString()}`;
+        }
+
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+    </script>
+</body>
+</html>

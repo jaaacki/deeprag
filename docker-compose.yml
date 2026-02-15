@@ -5,6 +5,8 @@ services:
       context: .
       dockerfile: Dockerfile
     image: emby-processor:latest
+    ports:
+      - "8000:8000"  # Dashboard API
     volumes:
       # Watch directory (where new files appear)
       - /volume3/docker/yt_dlp/downloads:/watch
@@ -14,9 +16,12 @@ services:
       - ./.env:/app/.env
       # WordPress refresh token (for auto-refresh)
       - ./.refresh_token:/app/.refresh_token:ro
+      # Docker socket (for log access from API)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - wpfamilyhub
       - emby
+      - emby-processor-net
     environment:
       - TZ=Asia/Singapore
     restart: unless-stopped
@@ -29,6 +34,33 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    container_name: emby-processor-db
+    image: postgres:16-alpine
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    networks:
+      - emby-processor-net
+    environment:
+      - POSTGRES_DB=emby_processor
+      - POSTGRES_USER=emby
+      - POSTGRES_PASSWORD=emby
+      - TZ=Asia/Singapore
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U emby"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+    driver: local
 
 networks:
   wpfamilyhub:
@@ -37,3 +69,5 @@ networks:
   emby:
     external: true
     name: emby_default
+  emby-processor-net:
+    driver: bridge
