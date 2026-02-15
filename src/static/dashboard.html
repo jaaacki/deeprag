@@ -104,6 +104,12 @@
                 <input type="text" class="form-control" id="searchQuery" placeholder="Search movie code or actress">
             </div>
             <div class="col-md-6 text-end">
+                <div class="form-check form-check-inline me-3">
+                    <input class="form-check-input" type="checkbox" id="forceFreshMetadata" onchange="saveForceFreshSetting()">
+                    <label class="form-check-label" for="forceFreshMetadata" title="Bypass cache and fetch fresh metadata from API">
+                        <i class="bi bi-lightning-charge"></i> Force Fresh
+                    </label>
+                </div>
                 <button class="btn btn-outline-primary" onclick="refreshData()">
                     <i class="bi bi-arrow-clockwise"></i> Refresh
                 </button>
@@ -197,10 +203,30 @@
             refreshData();
             startAutoRefresh();
 
+            // Load force fresh setting from localStorage
+            const forceFresh = localStorage.getItem('forceFreshMetadata') === 'true';
+            document.getElementById('forceFreshMetadata').checked = forceFresh;
+
             // Event listeners
             document.getElementById('filterStatus').addEventListener('change', refreshQueue);
             document.getElementById('searchQuery').addEventListener('input', debounce(refreshQueue, 500));
         });
+
+        // Save force fresh setting to localStorage
+        function saveForceFreshSetting() {
+            const forceFresh = document.getElementById('forceFreshMetadata').checked;
+            localStorage.setItem('forceFreshMetadata', forceFresh);
+            if (forceFresh) {
+                showToast('Force Fresh enabled - bypassing cache', 'info');
+            } else {
+                showToast('Force Fresh disabled - using cached data', 'info');
+            }
+        }
+
+        // Get current force fresh setting
+        function getForceFresh() {
+            return document.getElementById('forceFreshMetadata').checked;
+        }
 
         // Auto-refresh every 5 seconds
         function startAutoRefresh() {
@@ -403,12 +429,16 @@
 
         // Bulk refresh metadata for all completed items
         async function bulkRefreshMetadata() {
+            const forceFresh = getForceFresh();
+            const freshText = forceFresh ? '\n• FORCE FRESH enabled - bypassing cache' : '';
+
             const updateEmby = confirm(
                 'Refresh metadata for all completed items using NEW unified search?\n\n' +
                 'This will:\n' +
                 '• Re-fetch metadata from WordPress (unified /emby/v1/search)\n' +
                 '• NOT move files - only update metadata\n' +
-                '• Update Emby with new metadata (if you click OK)\n\n' +
+                '• Update Emby with new metadata (if you click OK)' +
+                freshText + '\n\n' +
                 'Click OK to update Emby, Cancel to skip Emby update'
             );
 
@@ -423,11 +453,12 @@
                 return;
             }
 
-            showToast('Starting bulk metadata refresh... (check logs)', 'info');
+            const freshMsg = forceFresh ? ' (FORCE FRESH)' : '';
+            showToast(`Starting bulk metadata refresh${freshMsg}... (check logs)`, 'info');
 
             try {
                 const response = await fetch(
-                    `${API_BASE}/api/bulk/refresh-metadata?status=completed&update_emby=${updateEmby}`,
+                    `${API_BASE}/api/bulk/refresh-metadata?status=completed&update_emby=${updateEmby}&fresh=${forceFresh}`,
                     { method: 'POST' }
                 );
 
@@ -620,10 +651,22 @@
             };
 
             const loadingMsg = actionNames[action] || 'Processing';
-            showToast(`${loadingMsg}...`, 'info');
+            const forceFresh = getForceFresh();
+
+            if (forceFresh && (action === 'fetch-metadata' || action === 'update-emby')) {
+                showToast(`${loadingMsg} (FORCE FRESH - bypassing cache)...`, 'info');
+            } else {
+                showToast(`${loadingMsg}...`, 'info');
+            }
 
             try {
-                const response = await fetch(`${API_BASE}/api/queue/${itemId}/actions/${action}`, {
+                // Add fresh parameter for metadata actions if force fresh is enabled
+                const url = new URL(`${API_BASE}/api/queue/${itemId}/actions/${action}`, window.location.origin);
+                if (forceFresh && (action === 'fetch-metadata' || action === 'update-emby')) {
+                    url.searchParams.append('fresh', 'true');
+                }
+
+                const response = await fetch(url, {
                     method: 'POST'
                 });
 

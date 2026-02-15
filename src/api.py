@@ -431,11 +431,15 @@ async def action_extract_code(item_id: int):
 
 
 @app.post("/api/queue/{item_id}/actions/fetch-metadata")
-async def action_fetch_metadata(item_id: int):
+async def action_fetch_metadata(
+    item_id: int,
+    fresh: bool = Query(False, description="Force fresh metadata (bypass cache)")
+):
     """Re-fetch metadata from WordPress API."""
     from .metadata import MetadataClient
 
-    logger.info(f"[API Action] Fetch metadata requested for item {item_id}")
+    fresh_text = " (FORCE FRESH)" if fresh else ""
+    logger.info(f"[API Action] Fetch metadata requested for item {item_id}{fresh_text}")
     db = get_queue_db()
     conn = db._get_conn()
 
@@ -455,7 +459,7 @@ async def action_fetch_metadata(item_id: int):
                     detail="No movie code - run extract-code first"
                 )
 
-            logger.info(f"[API Action] Fetching metadata for: {movie_code}")
+            logger.info(f"[API Action] Fetching metadata for: {movie_code}{fresh_text}")
 
             # Fetch metadata
             api_config = {
@@ -469,7 +473,7 @@ async def action_fetch_metadata(item_id: int):
                 search_order=api_config['search_order'],
             )
 
-            metadata = metadata_client.search(movie_code)
+            metadata = metadata_client.search(movie_code, fresh=fresh)
             if not metadata:
                 logger.warning(f"[API Action] No metadata found for {movie_code}")
                 raise HTTPException(
@@ -693,6 +697,7 @@ async def cleanup(older_than_days: int = Query(30, ge=1, le=365)):
 async def bulk_refresh_metadata(
     status: Optional[str] = Query(None, description="Filter by status (default: completed)"),
     update_emby: bool = Query(True, description="Also update Emby metadata"),
+    fresh: bool = Query(False, description="Force fresh metadata (bypass cache)"),
 ):
     """Bulk re-fetch metadata for items using unified search endpoint.
 
@@ -703,7 +708,8 @@ async def bulk_refresh_metadata(
     """
     from .metadata import MetadataClient
 
-    logger.info("[API Bulk] Bulk metadata refresh started")
+    fresh_text = " (FORCE FRESH)" if fresh else ""
+    logger.info(f"[API Bulk] Bulk metadata refresh started{fresh_text}")
     db = get_queue_db()
     conn = db._get_conn()
 
@@ -749,10 +755,11 @@ async def bulk_refresh_metadata(
 
         for item_id, movie_code, new_path, emby_item_id in items:
             try:
-                logger.info(f"[API Bulk] Refreshing metadata for item {item_id}: {movie_code}")
+                fresh_item_text = " (FORCE FRESH)" if fresh else ""
+                logger.info(f"[API Bulk] Refreshing metadata for item {item_id}: {movie_code}{fresh_item_text}")
 
                 # Fetch metadata using unified search
-                metadata = metadata_client.search(movie_code)
+                metadata = metadata_client.search(movie_code, fresh=fresh)
                 if not metadata:
                     logger.warning(f"[API Bulk] No metadata found for {movie_code} (item {item_id})")
                     failed_count += 1

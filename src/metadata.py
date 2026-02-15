@@ -27,22 +27,33 @@ class MetadataClient:
         if search_order:
             logger.info('search_order parameter is deprecated - unified search handles provider selection')
 
-    def search(self, movie_code: str) -> dict | None:
+    def search(self, movie_code: str, fresh: bool = False) -> dict | None:
         """Search for movie metadata using unified endpoint.
 
         The backend handles provider fallback logic (missav → javguru).
-        Returns metadata dict on success, None on failure.
+
+        Args:
+            movie_code: The movie code to search for
+            fresh: If True, bypass cache and fetch fresh data from API
+
+        Returns:
+            Metadata dict on success, None on failure.
         """
         url = f'{self.base_url}{UNIFIED_SEARCH_ENDPOINT}'
         headers = {'Content-Type': 'application/json'}
         if self.token:
             headers['Authorization'] = f'Bearer {self.token}'
 
+        payload = {'moviecode': movie_code}
+        if fresh:
+            payload['fresh'] = True
+
         try:
-            logger.info('Searching metadata for %s via unified endpoint', movie_code)
+            fresh_text = ' (FORCE FRESH)' if fresh else ''
+            logger.info('Searching metadata for %s via unified endpoint%s', movie_code, fresh_text)
             resp = requests.post(
                 url,
-                json={'moviecode': movie_code},
+                json=payload,
                 headers=headers,
                 timeout=30,
             )
@@ -51,7 +62,8 @@ class MetadataClient:
 
             if body.get('success') and body.get('data'):
                 source = body.get('source', 'unknown')
-                logger.info('Found metadata for %s via %s (unified search)', movie_code, source)
+                cache_status = ' [FRESH]' if fresh else ' [cached]'
+                logger.info('Found metadata for %s via %s (unified search)%s', movie_code, source, cache_status)
                 return body['data']
 
             logger.info('No metadata found for %s (unified search)', movie_code)
