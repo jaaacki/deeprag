@@ -13,7 +13,14 @@ SUBTITLE_KEYWORDS = [
     (re.compile(r'\benglish\b', re.IGNORECASE), 'English Sub'),
     (re.compile(r'\beng\b', re.IGNORECASE), 'English Sub'),
     (re.compile(r'chinese\s*sub(?:bed|s|title[ds]?)?', re.IGNORECASE), 'Chinese Sub'),
+    (re.compile(r'\bchinese\b', re.IGNORECASE), 'Chinese Sub'),
     (re.compile(r'\bchi\b', re.IGNORECASE), 'Chinese Sub'),
+    (re.compile(r'korean\s*sub(?:bed|s|title[ds]?)?', re.IGNORECASE), 'Korean Sub'),
+    (re.compile(r'\bkorean\b', re.IGNORECASE), 'Korean Sub'),
+    (re.compile(r'\bkor\b', re.IGNORECASE), 'Korean Sub'),
+    (re.compile(r'japanese\s*sub(?:bed|s|title[ds]?)?', re.IGNORECASE), 'Japanese Sub'),
+    (re.compile(r'\bjapanese\b', re.IGNORECASE), 'Japanese Sub'),
+    (re.compile(r'\bjpn\b', re.IGNORECASE), 'Japanese Sub'),
 ]
 
 
@@ -32,7 +39,7 @@ def extract_movie_code(filename: str) -> str | None:
 def detect_subtitle(filename: str) -> str:
     """Detect subtitle language from filename keywords.
 
-    Returns 'English Sub', 'Chinese Sub', or 'No Sub'.
+    Returns 'English Sub', 'Chinese Sub', 'Korean Sub', 'Japanese Sub', or 'No Sub'.
     """
     stem = Path(filename).stem
     for pattern, label in SUBTITLE_KEYWORDS:

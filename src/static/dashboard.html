@@ -585,13 +585,23 @@
                 <div class="section-body">
                     <form id="downloadForm" onsubmit="submitDownload(event)">
                         <div class="row g-2 align-items-end">
-                            <div class="col-md-6">
+                            <div class="col-md-5">
                                 <label for="downloadUrl" class="form-label">URL</label>
                                 <input type="url" class="form-control" id="downloadUrl" placeholder="https://..." required>
                             </div>
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <label for="downloadFilename" class="form-label">Filename <small class="text-muted">(optional)</small></label>
                                 <input type="text" class="form-control" id="downloadFilename" placeholder="custom-filename">
+                            </div>
+                            <div class="col-md-2">
+                                <label for="downloadSubtitle" class="form-label">Subtitle</label>
+                                <select class="form-select" id="downloadSubtitle">
+                                    <option value="">No Sub</option>
+                                    <option value="English Sub">English Sub</option>
+                                    <option value="Chinese Sub">Chinese Sub</option>
+                                    <option value="Korean Sub">Korean Sub</option>
+                                    <option value="Japanese Sub">Japanese Sub</option>
+                                </select>
                             </div>
                             <div class="col-md-2">
                                 <button type="submit" class="btn btn-primary w-100" id="downloadBtn">
@@ -1224,6 +1234,7 @@
             event.preventDefault();
             const urlInput = document.getElementById('downloadUrl');
             const filenameInput = document.getElementById('downloadFilename');
+            const subtitleSelect = document.getElementById('downloadSubtitle');
             const btn = document.getElementById('downloadBtn');
             const url = urlInput.value.trim();
             if (!url) return;
@@ -1232,12 +1243,19 @@
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Starting...';
             try {
                 const params = new URLSearchParams({ url });
-                if (filenameInput.value.trim()) params.append('filename', filenameInput.value.trim());
+                let filename = filenameInput.value.trim();
+                const subtitle = subtitleSelect.value;
+                if (filename && subtitle) {
+                    filename = `${filename} ${subtitle}`;
+                } else if (subtitle) {
+                    filename = subtitle;
+                }
+                if (filename) params.append('filename', filename);
                 const response = await fetch(`${API_BASE}/api/download?${params}`, { method: 'POST' });
                 if (!response.ok) { const err = await response.json(); throw new Error(err.detail || 'Download failed'); }
                 const result = await response.json();
                 showToast(result.message || 'Download started', 'success');
-                urlInput.value = ''; filenameInput.value = '';
+                urlInput.value = ''; filenameInput.value = ''; subtitleSelect.value = '';
                 refreshDownloads();
             } catch (error) { showToast(`Error: ${error.message}`, 'error'); }
             finally { btn.disabled = false; btn.innerHTML = '<i class="bi bi-download"></i> Download'; }
