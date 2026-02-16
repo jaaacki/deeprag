@@ -314,6 +314,52 @@ getNameFromPath: function (path) {
 
 **Fix**: Extract Name from `emby_item['Path']` by taking the last path component and removing the extension. This matches legacy behavior exactly.
 
+## 2026-02-16 — Prometheus Metrics in a Multi-Process Container
+
+### Why this design — Multiprocess mode for two-process container
+
+The container runs two processes: `main.py` (workers) and `run_api.py` (FastAPI via uvicorn). `prometheus-client` uses an in-memory registry per process by default, so metrics from workers would be invisible at the `/metrics` endpoint served by FastAPI.
+
+**Solution**: `PROMETHEUS_MULTIPROC_DIR` — both processes write metric files to a shared directory (`/tmp/prometheus_metrics`). The `/metrics` endpoint uses `MultiProcessCollector` to aggregate all files. `start.sh` cleans the directory on startup to avoid stale data from previous runs.
+
+Key detail: Gauges need `multiprocess_mode='liveall'` so each process reports its own value independently. Counters and histograms aggregate naturally.
+
+### What just happened — Bug trifecta on first deploy
+
+Three bugs discovered in the same deploy cycle:
+
+1. **File path lost on error**: When `_move_to_unprocessed()` moved a file, the new location was returned but not saved to the DB. The queue item still had the original path → FileNotFoundError on retry.
+2. **Shadowed `time` import**: `emby_client.py:update_item_metadata()` had `import time` inside the function body AND used `time` as a variable name for the API request timer context. The local `time` variable shadowed the module.
+3. **Update-emby action checked wrong field**: The dashboard's "update-emby" action checked `item.status == 'moved'` but should have checked `item.new_path` exists, since completed items also have new_path and should be re-updatable.
+
+**Lesson**: When adding observability instrumentation across many files, test each instrumented path — not just the happy path. Timer context managers (`with HISTOGRAM.time():`) are particularly prone to variable shadowing.
+
+## 2026-02-17 — Dashboard Redesign & UX Improvements
+
+### What just happened — Single-file dashboard at 1400+ lines
+
+The dashboard grew from ~600 lines (Bootstrap prototype) to 1400+ lines (production UI). Despite the size, keeping it as a single HTML file has clear benefits:
+- Zero build tooling needed
+- FastAPI serves it as a static file
+- Hot reload: just refresh the browser
+- No dependency management for frontend
+
+The trade-off is maintainability — CSS, JS, and HTML are all in one file. At ~2000 lines, it may be worth splitting into separate files. For now, well-organized sections with clear comments keep it manageable.
+
+### What we learned — CSS custom properties make theming trivial
+
+The dark/light theme toggle uses CSS custom properties (`--bg-base`, `--text-primary`, etc.) with a `[data-theme="light"]` selector override. Key insights:
+
+1. **Define ALL colors as variables** — even ones you think won't change. Hardcoded colors like `rgba(19,22,30,0.92)` for the navbar break theme switching.
+2. **Flash prevention**: Apply theme from localStorage in an inline `<script>` BEFORE DOMContentLoaded. Otherwise users see a flash of the wrong theme.
+3. **Bootstrap integration**: Set both `data-theme` and `data-bs-theme` attributes on `<html>` so Bootstrap components (modals, dropdowns) respect the theme.
+
+### What we learned — Subtitle dropdown reduces user error
+
+Instead of relying on users to type subtitle language in the filename (prone to typos like "Englsh Sub"), a dropdown with preset options eliminates misspelling entirely. The selected subtitle is appended to the filename before the download API call, so the pipeline's `detect_subtitle()` picks it up naturally.
+
+This also required adding Korean and Japanese subtitle detection to `extractor.py` — previously only English and Chinese were supported.
+
 ### What we learned — Always check legacy implementation for field mappings
 
 When implementing metadata mapping, we made assumptions about what fields should contain based on their names (`Name` = title, `OriginalTitle` = original). These assumptions were **wrong**.

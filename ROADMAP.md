@@ -15,16 +15,17 @@
 - [x] Docker setup with volume mounts and shared network (#6)
 - [x] Unit tests for extractor and renamer (#7)
 
-## Phase 2 — Resilience & Observability (v0.2.0)
+## Phase 2 — Resilience & Observability (v0.6.0)
 
 > The pipeline handles edge cases gracefully and operators can monitor its health.
 
 - [ ] Structured logging with JSON output for Docker log drivers
-- [ ] Retry with exponential backoff for API failures
+- [x] Retry with exponential backoff for API failures (done in v0.4.0)
 - [ ] Health check endpoint or file for Docker health monitoring
 - [ ] Process existing files on startup (catch up after restart)
 - [ ] Duplicate detection (skip files already in destination)
-- [ ] Metrics: files processed, failed, API latency
+- [x] Metrics: Prometheus `/metrics` endpoint with pipeline counters, API timing, queue depth gauges, worker heartbeats
+- [x] `/api/metrics-summary` JSON endpoint for dashboard (completed_24h, errors_24h, error_rate, avg_time)
 
 ## Phase 3 — Emby Integration (v0.3.0)
 
@@ -78,7 +79,7 @@
   - Use /missavscout endpoint
   - Queue URLs for download
 
-## Phase 6 — Dashboard & Download Integration (v0.5.0)
+## Phase 6 — Dashboard & Download Integration (v0.5.0+)
 
 > Trigger downloads and monitor processing from a single web UI.
 
@@ -87,6 +88,21 @@
   - Background thread execution with in-memory job tracking
   - Recent downloads table with status badges and auto-refresh
 - [x] Web UI dashboard for processing status (completed earlier, formalized here)
+- [x] Subtitle dropdown in download form (No Sub, English/Chinese/Korean/Japanese Sub)
+
+## Phase 7 — Dashboard Redesign (v0.7.0)
+
+> Production-quality dashboard with polished UX and full observability.
+
+- [x] Dark cinematic theme with custom typography (Sora, DM Sans, JetBrains Mono)
+- [x] 24h metrics strip (completed, errors, error rate, avg processing time)
+- [x] Pipeline progress indicator with glow effects per item
+- [x] Log level syntax highlighting (INFO/WARN/ERROR)
+- [x] Image preview in item detail modal
+- [x] Collapsible Downloads and Queue sections (localStorage persisted)
+- [x] Dark/light theme toggle with flash prevention
+- [x] Admin actions tucked into navbar dropdown
+- [x] Mobile responsive layout
 
 ## Backlog
 

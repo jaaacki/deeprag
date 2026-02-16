@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-02-17
+
+### Added
+- **Dashboard redesign**: Complete UI overhaul with dark cinematic theme
+  - Custom fonts (Sora, DM Sans, JetBrains Mono), warm amber accent palette
+  - Proper navbar with logo, status indicators, and admin actions dropdown
+  - 24h metrics strip from `/api/metrics-summary` (completed, errors, error rate, avg time)
+  - Log level syntax highlighting (INFO/WARN/ERROR color-coded)
+  - Image preview in item detail modal (from metadata_json image_cropped/raw_image_url)
+  - Pipeline progress indicator with glow effects
+- **Dark/light theme toggle**: Full theme switching with CSS custom properties, persisted in localStorage, flash-prevention on load
+- **Collapsible queue sections**: Downloads and Queue sections can be collapsed/expanded with click, state persisted in localStorage
+- **Subtitle dropdown in download form**: Select from preset subtitle options (English Sub, Chinese Sub, Korean Sub, Japanese Sub) instead of relying on filename detection
+- Korean and Japanese subtitle detection in extractor (keywords: korean, kor, japanese, jpn)
+
+## [0.6.0] — 2026-02-16
+
+### Added
+- **Prometheus `/metrics` endpoint**: Full observability with multiprocess mode
+  - Pipeline stage counters (`emby_pipeline_items_total` by stage and result)
+  - External API request timing and counting (`emby_api_request_duration_seconds`)
+  - Queue depth gauges refreshed on scrape
+  - Worker heartbeat timestamps
+  - Dashboard request timing middleware
+  - `/api/metrics-summary` JSON endpoint (completed_24h, errors_24h, avg_processing_seconds, error_rate_24h)
+- Show filename under movie code in queue table
+- Pipeline progress indicator showing which stage each item is at
+- Disable invalid actions based on item status
+
+### Fixed
+- File path lost on error when moving to unprocessed directory
+- Shadowed `time` import in `emby_client.py` `update_item_metadata()`
+- Update-emby action now checks `new_path` instead of status
+- Item marked as completed after successful direct Emby update via dashboard action
+
 ## [0.5.0] — 2026-02-15
 
 ### Added

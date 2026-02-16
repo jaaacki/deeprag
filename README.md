@@ -18,7 +18,9 @@ Automated file processing pipeline that watches for new video files, fetches met
 - Downloads and uploads poster images (Primary, Backdrop, Banner) from WordPress
 - Automatic retry with exponential backoff for failures
 - CLI for queue management and monitoring
-- yt-dlp download form on dashboard (triggers downloads via `docker exec`)
+- yt-dlp download form on dashboard with subtitle dropdown (triggers downloads via `docker exec`)
+- Production dashboard with dark/light theme, collapsible sections, 24h metrics strip
+- Prometheus `/metrics` endpoint for observability (pipeline counters, API timing, queue depth)
 
 ### Example
 
@@ -89,12 +91,10 @@ The `docker-compose.yml` mounts:
 
 WordPress JWT tokens expire every 24 hours. The container automatically refreshes them:
 
-- **Cron job** runs inside container every 20 hours
-- Uses refresh token to get new access token
-- Updates `.env` file automatically
+- **Python-native** `TokenManager` checks every 5 minutes, proactively refreshes within 4h of expiry
+- Reactive 401 handling with 60s debounce
+- Token persisted in PostgreSQL (`auth_tokens` table) for cross-process sync
 - **No manual intervention needed** after initial setup
-
-See [scripts/README.md](scripts/README.md) for technical details.
 
 ### 3. Verify
 
@@ -275,9 +275,15 @@ emby-processor/
 │   ├── emby_client.py       # Emby server API client (scan, metadata, images)
 │   ├── renamer.py           # Filename builder + sanitizer + file move
 │   ├── downloader.py        # yt-dlp download manager (docker exec + background threads)
+│   ├── metrics.py           # Prometheus metric definitions (multiprocess mode)
+│   ├── token_manager.py     # JWT token auto-refresh (background thread + DB persistence)
+│   ├── static/
+│   │   └── dashboard.html   # Production web dashboard (single-file HTML/CSS/JS)
 │   └── pipeline.py          # Legacy orchestrator (kept for reference)
 ├── migrations/
-│   └── 001_create_queue.sql # PostgreSQL schema for processing_queue table
+│   ├── 001_create_queue.sql # PostgreSQL schema for processing_queue table
+│   ├── 002_create_downloads.sql # Download jobs table
+│   └── 003_create_auth_tokens.sql # JWT token persistence table
 ├── tests/
 │   ├── test_extractor.py    # Extractor unit tests (11 tests)
 │   ├── test_renamer.py      # Renamer unit tests (12 tests)

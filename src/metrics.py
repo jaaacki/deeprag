@@ -80,4 +80,4 @@ PROCESSOR_VERSION = Gauge(
     ['version'],
     multiprocess_mode='liveall',
 )
-PROCESSOR_VERSION.labels(version='0.5.0').set(1)
+PROCESSOR_VERSION.labels(version='0.7.0').set(1)
