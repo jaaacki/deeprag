@@ -387,7 +387,6 @@ class EmbyClient:
             return False
 
         # Verify the update was persisted by reading back from Emby
-        import time
         time.sleep(1)  # Brief pause for Emby to persist
         verified = self.get_item_details(item_id)
         if not verified:
