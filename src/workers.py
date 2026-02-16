@@ -17,6 +17,7 @@ from typing import Optional
 from .emby_client import EmbyClient
 from .extractor import extract_movie_code, detect_subtitle
 from .metadata import MetadataClient
+from .metrics import PIPELINE_ITEMS_TOTAL, WORKER_LAST_ACTIVE
 from .queue import QueueDB
 from .renamer import build_filename, move_file
 
@@ -107,16 +108,19 @@ class FileProcessorWorker(BaseWorker):
             movie_code = extract_movie_code(filename)
             if not movie_code:
                 logger.warning('[FileProcessor] No movie code in: %s', filename)
-                self._move_to_unprocessed(file_path)
+                new_location = self._move_to_unprocessed(file_path)
                 self.queue_db.update_status(
                     item_id, 'error',
                     error_message=f'No movie code found in filename: {filename}',
+                    file_path=new_location,
                 )
+                PIPELINE_ITEMS_TOTAL.labels(stage='extract', result='error').inc()
                 return True
 
             # Step 2: Detect subtitle
             subtitle = detect_subtitle(filename)
             logger.info('[FileProcessor] Extracted: code=%s subtitle=%s', movie_code, subtitle)
+            PIPELINE_ITEMS_TOTAL.labels(stage='extract', result='success').inc()
 
             # Step 3: Fetch metadata
             metadata = self.metadata_client.search(movie_code)
@@ -126,11 +130,13 @@ class FileProcessorWorker(BaseWorker):
 
             if metadata is None:
                 logger.warning('[FileProcessor] No metadata for %s', movie_code)
-                self._move_to_unprocessed(file_path)
+                new_location = self._move_to_unprocessed(file_path)
                 self.queue_db.update_status(
                     item_id, 'error',
                     error_message=f'No metadata found for movie code: {movie_code}',
+                    file_path=new_location,
                 )
+                PIPELINE_ITEMS_TOTAL.labels(stage='metadata', result='error').inc()
                 return True
 
             # Step 4: Extract fields from metadata
@@ -148,12 +154,15 @@ class FileProcessorWorker(BaseWorker):
 
             title = title.title()
 
+            PIPELINE_ITEMS_TOTAL.labels(stage='metadata', result='success').inc()
+
             # Step 5: Build new filename and move
             extension = Path(file_path).suffix
             new_filename = build_filename(actress, subtitle, api_code, title, extension)
 
             new_path = move_file(file_path, self.destination_dir, actress, new_filename)
             logger.info('[FileProcessor] Moved: %s -> %s', filename, new_path)
+            PIPELINE_ITEMS_TOTAL.labels(stage='rename', result='success').inc()
 
             # Step 6: Update queue item
             self.queue_db.update_status(
@@ -178,6 +187,7 @@ class FileProcessorWorker(BaseWorker):
             finally:
                 self.queue_db._put_conn(conn)
 
+            WORKER_LAST_ACTIVE.labels(worker='FileProcessor').set_to_current_time()
             return True
 
         except Exception as e:
@@ -186,19 +196,25 @@ class FileProcessorWorker(BaseWorker):
                 item_id, 'error',
                 error_message=str(e),
             )
+            PIPELINE_ITEMS_TOTAL.labels(stage='rename', result='error').inc()
             return True
 
-    def _move_to_unprocessed(self, file_path: str) -> None:
-        """Move a file to the unprocessed directory."""
+    def _move_to_unprocessed(self, file_path: str) -> str | None:
+        """Move a file to the unprocessed directory.
+
+        Returns the new file path if moved successfully, None otherwise.
+        """
         import shutil
         unprocessed_dir = Path(self.unprocessed_dir)
         unprocessed_dir.mkdir(parents=True, exist_ok=True)
         dest = unprocessed_dir / Path(file_path).name
         try:
             shutil.move(file_path, str(dest))
-            logger.info('[FileProcessor] Moved to errors: %s', dest)
+            logger.info('[FileProcessor] Moved to unprocessed: %s', dest)
+            return str(dest)
         except OSError as e:
-            logger.error('[FileProcessor] Failed to move %s to errors: %s', file_path, e)
+            logger.error('[FileProcessor] Failed to move %s to unprocessed: %s', file_path, e)
+            return None
 
 
 class EmbyUpdaterWorker(BaseWorker):
@@ -247,6 +263,7 @@ class EmbyUpdaterWorker(BaseWorker):
                     item_id, 'error',
                     error_message='Emby library scan failed',
                 )
+                PIPELINE_ITEMS_TOTAL.labels(stage='emby_update', result='error').inc()
                 return True
 
             # Step 2: Translate path to Emby's view and poll for the item
@@ -260,6 +277,7 @@ class EmbyUpdaterWorker(BaseWorker):
                     item_id, 'error',
                     error_message=f'Emby item not found for path: {new_path}',
                 )
+                PIPELINE_ITEMS_TOTAL.labels(stage='emby_update', result='error').inc()
                 return True
 
             emby_item_id = emby_item.get('Id')
@@ -278,6 +296,7 @@ class EmbyUpdaterWorker(BaseWorker):
                         error_message=f'Failed to update Emby metadata for item {emby_item_id}',
                         emby_item_id=emby_item_id,
                     )
+                    PIPELINE_ITEMS_TOTAL.labels(stage='emby_update', result='error').inc()
                     return True
 
                 # Step 4: Upload images (best-effort, don't block pipeline)
@@ -296,6 +315,8 @@ class EmbyUpdaterWorker(BaseWorker):
                 emby_item_id=emby_item_id,
             )
             logger.info('[EmbyUpdater] Completed item %s (Emby ID: %s)', item_id, emby_item_id)
+            PIPELINE_ITEMS_TOTAL.labels(stage='emby_update', result='success').inc()
+            WORKER_LAST_ACTIVE.labels(worker='EmbyUpdater').set_to_current_time()
             return True
 
         except Exception as e:
@@ -304,6 +325,7 @@ class EmbyUpdaterWorker(BaseWorker):
                 item_id, 'error',
                 error_message=str(e),
             )
+            PIPELINE_ITEMS_TOTAL.labels(stage='emby_update', result='error').inc()
             return True
 
 

@@ -7,6 +7,8 @@ from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
 
 import requests
 
+from .metrics import API_REQUESTS_TOTAL, API_REQUEST_DURATION
+
 logger = logging.getLogger(__name__)
 
 # Default retry schedule: exponential backoff 2s, 4s, 8s, 16s, 32s, 64s
@@ -115,11 +117,15 @@ class EmbyClient:
         params = {'Recursive': 'true'}
 
         try:
+            start = time.monotonic()
             resp = requests.post(url, headers=headers, params=params, timeout=30)
+            API_REQUEST_DURATION.labels(service='emby', operation='scan_library').observe(time.monotonic() - start)
             resp.raise_for_status()
+            API_REQUESTS_TOTAL.labels(service='emby', status='success').inc()
             logger.info('Emby library %s scan triggered successfully', library_id)
             return True
         except requests.RequestException as e:
+            API_REQUESTS_TOTAL.labels(service='emby', status='error').inc()
             logger.warning('Failed to trigger Emby library %s scan: %s', library_id, e)
             return False
 
@@ -142,8 +148,11 @@ class EmbyClient:
         }
 
         try:
+            start = time.monotonic()
             resp = requests.get(url, headers=headers, params=params, timeout=10)
+            API_REQUEST_DURATION.labels(service='emby', operation='get_item_by_path').observe(time.monotonic() - start)
             resp.raise_for_status()
+            API_REQUESTS_TOTAL.labels(service='emby', status='success').inc()
             data = resp.json()
             items = data.get('Items', [])
 
@@ -154,6 +163,7 @@ class EmbyClient:
             logger.warning('No Emby item found for path: %s', file_path)
             return None
         except requests.RequestException as e:
+            API_REQUESTS_TOTAL.labels(service='emby', status='error').inc()
             logger.error('Failed to find Emby item by path: %s', e)
             return None
 
@@ -363,10 +373,14 @@ class EmbyClient:
         }
 
         try:
+            start = time.monotonic()
             resp = requests.post(url, json=emby_item, headers=headers, timeout=30)
+            API_REQUEST_DURATION.labels(service='emby', operation='update_metadata').observe(time.monotonic() - start)
             logger.info('Emby update response: status=%s, body=%s', resp.status_code, resp.text[:200])
             resp.raise_for_status()
+            API_REQUESTS_TOTAL.labels(service='emby', status='success').inc()
         except requests.RequestException as e:
+            API_REQUESTS_TOTAL.labels(service='emby', status='error').inc()
             logger.error('Failed to update Emby item %s: %s', item_id, e)
             if hasattr(e, 'response') and e.response is not None:
                 logger.error('Response status: %s, body: %s', e.response.status_code, e.response.text[:500])
@@ -559,6 +573,7 @@ class EmbyClient:
         encoded = base64.b64encode(image_data).decode('ascii')
 
         try:
+            start = time.monotonic()
             resp = requests.post(
                 url,
                 params=params,
@@ -566,10 +581,13 @@ class EmbyClient:
                 headers={'Content-Type': content_type},
                 timeout=60,
             )
+            API_REQUEST_DURATION.labels(service='emby', operation='upload_image').observe(time.monotonic() - start)
             resp.raise_for_status()
+            API_REQUESTS_TOTAL.labels(service='emby', status='success').inc()
             logger.info('Uploaded %s image to item %s', image_type, item_id)
             return True
         except requests.RequestException as e:
+            API_REQUESTS_TOTAL.labels(service='emby', status='error').inc()
             logger.error('Failed to upload %s image to item %s: %s', image_type, item_id, e)
             return False
 

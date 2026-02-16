@@ -1,7 +1,11 @@
 """WP REST API client for searching movie metadata."""
 
 import logging
+import time
+
 import requests
+
+from .metrics import API_REQUESTS_TOTAL, API_REQUEST_DURATION
 
 logger = logging.getLogger(__name__)
 
@@ -61,28 +65,36 @@ class MetadataClient:
         try:
             fresh_text = ' (FORCE FRESH)' if fresh else ''
             logger.info('Searching metadata for %s via unified endpoint%s', movie_code, fresh_text)
+
+            start = time.monotonic()
             resp = requests.post(
                 url,
                 json=payload,
                 headers=headers,
                 timeout=30,
             )
+            API_REQUEST_DURATION.labels(service='wordpress', operation='search').observe(time.monotonic() - start)
 
             # Handle 401 with token refresh + single retry
             if resp.status_code == 401 and self._token_manager:
+                API_REQUESTS_TOTAL.labels(service='wordpress', status='401').inc()
                 logger.warning('Got 401 for %s, attempting token refresh', movie_code)
                 self._token_manager.handle_401()
                 # Rebuild headers with new token
                 headers['Authorization'] = f'Bearer {self.token}'
+                start = time.monotonic()
                 resp = requests.post(
                     url,
                     json=payload,
                     headers=headers,
                     timeout=30,
                 )
+                API_REQUEST_DURATION.labels(service='wordpress', operation='search').observe(time.monotonic() - start)
 
             resp.raise_for_status()
             body = resp.json()
+
+            API_REQUESTS_TOTAL.labels(service='wordpress', status='success').inc()
 
             if body.get('success') and body.get('data'):
                 source = body.get('source', 'unknown')
@@ -94,5 +106,6 @@ class MetadataClient:
             return None
 
         except requests.RequestException as e:
+            API_REQUESTS_TOTAL.labels(service='wordpress', status='error').inc()
             logger.warning('Unified search failed for %s: %s', movie_code, e)
             return None

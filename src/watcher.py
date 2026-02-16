@@ -8,6 +8,8 @@ from pathlib import Path
 from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent
 from watchdog.observers import Observer
 
+from .metrics import FILES_DETECTED_TOTAL
+
 logger = logging.getLogger(__name__)
 
 
@@ -81,6 +83,7 @@ class VideoHandler(FileSystemEventHandler):
             return
 
         logger.info('New file detected: %s', path.name)
+        FILES_DETECTED_TOTAL.inc()
 
         if not self.stability_checker.wait_until_stable(file_path):
             return

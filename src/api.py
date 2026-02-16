@@ -3,15 +3,19 @@
 import json
 import logging
 import os
+import re
+import time as _time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .log_buffer import get_log_buffer
+from .metrics import DASHBOARD_REQUEST_DURATION, QUEUE_DEPTH, DOWNLOADS_DEPTH
 from .queue import QueueDB
 from .token_manager import TokenManager, load_refresh_token
 
@@ -24,6 +28,34 @@ app = FastAPI(
     version="0.5.0",
 )
 
+# Path normalization regex for Prometheus labels (avoid cardinality explosion)
+_ID_PATTERN = re.compile(r'/\d+')
+
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    """Record request duration for dashboard endpoints."""
+
+    async def dispatch(self, request: Request, call_next):
+        # Skip the /metrics endpoint itself to avoid recursion
+        if request.url.path == '/metrics':
+            return await call_next(request)
+
+        start = _time.monotonic()
+        response = await call_next(request)
+        duration = _time.monotonic() - start
+
+        # Normalize path: replace numeric IDs with {id}
+        endpoint = _ID_PATTERN.sub('/{id}', request.url.path)
+
+        DASHBOARD_REQUEST_DURATION.labels(
+            method=request.method,
+            endpoint=endpoint,
+            status_code=str(response.status_code),
+        ).observe(duration)
+
+        return response
+
+
 # Add CORS middleware (allow all origins for LAN access)
 app.add_middleware(
     CORSMiddleware,
@@ -32,6 +64,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add metrics middleware (outermost to capture full request duration)
+app.add_middleware(MetricsMiddleware)
 
 # Global QueueDB instance (initialized on startup)
 queue_db: Optional[QueueDB] = None
@@ -170,6 +205,100 @@ async def health():
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Expose Prometheus metrics (multiprocess-safe)."""
+    from prometheus_client import CollectorRegistry, generate_latest, CONTENT_TYPE_LATEST
+    from prometheus_client.multiprocess import MultiProcessCollector
+
+    # Refresh queue/download gauges from DB before generating output
+    _refresh_queue_gauges()
+
+    registry = CollectorRegistry()
+    MultiProcessCollector(registry)
+    data = generate_latest(registry)
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/api/metrics-summary")
+async def metrics_summary():
+    """JSON summary of key metrics for the last 24 hours."""
+    db = get_queue_db()
+    conn = db._get_conn()
+
+    try:
+        with conn.cursor() as cur:
+            # Completed in last 24h
+            cur.execute("""
+                SELECT COUNT(*) FROM processing_queue
+                WHERE status = 'completed'
+                  AND updated_at >= NOW() - INTERVAL '24 hours'
+            """)
+            completed_24h = cur.fetchone()[0]
+
+            # Errors in last 24h
+            cur.execute("""
+                SELECT COUNT(*) FROM processing_queue
+                WHERE status = 'error'
+                  AND updated_at >= NOW() - INTERVAL '24 hours'
+            """)
+            errors_24h = cur.fetchone()[0]
+
+            # Average processing time (created_at -> updated_at for completed items in last 24h)
+            cur.execute("""
+                SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at)))
+                FROM processing_queue
+                WHERE status = 'completed'
+                  AND updated_at >= NOW() - INTERVAL '24 hours'
+            """)
+            avg_row = cur.fetchone()[0]
+            avg_processing_seconds = round(float(avg_row), 2) if avg_row else 0.0
+
+        total_24h = completed_24h + errors_24h
+        error_rate_24h = round(errors_24h / total_24h, 4) if total_24h > 0 else 0.0
+
+        return {
+            "completed_24h": completed_24h,
+            "errors_24h": errors_24h,
+            "avg_processing_seconds": avg_processing_seconds,
+            "error_rate_24h": error_rate_24h,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    finally:
+        db._put_conn(conn)
+
+
+def _refresh_queue_gauges():
+    """Update queue/download depth gauges from the database."""
+    try:
+        db = get_queue_db()
+        conn = db._get_conn()
+        try:
+            with conn.cursor() as cur:
+                # Queue depth by status
+                cur.execute("""
+                    SELECT status, COUNT(*) FROM processing_queue GROUP BY status
+                """)
+                # Reset all known statuses to 0 first
+                for s in ('pending', 'processing', 'moved', 'emby_pending', 'completed', 'error'):
+                    QUEUE_DEPTH.labels(status=s).set(0)
+                for row in cur.fetchall():
+                    QUEUE_DEPTH.labels(status=row[0]).set(row[1])
+
+                # Download depth by status
+                cur.execute("""
+                    SELECT status, COUNT(*) FROM download_jobs GROUP BY status
+                """)
+                for s in ('queued', 'downloading', 'completed', 'failed'):
+                    DOWNLOADS_DEPTH.labels(status=s).set(0)
+                for row in cur.fetchall():
+                    DOWNLOADS_DEPTH.labels(status=row[0]).set(row[1])
+        finally:
+            db._put_conn(conn)
+    except Exception as e:
+        logger.warning('Failed to refresh queue gauges: %s', e)
 
 
 @app.get("/api/stats")
@@ -584,13 +713,20 @@ async def action_rename_file(item_id: int):
             else:
                 metadata = metadata_json
 
-            # Check if file exists
+            # Check if file exists; if not, check unprocessed directory
             if not Path(file_path).exists():
-                logger.warning(f"[API Action] File not found: {file_path}")
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"File not found: {file_path}"
-                )
+                # Try unprocessed directory as fallback
+                watch_dir = os.getenv('WATCH_DIR', '/watch')
+                unprocessed_path = Path(watch_dir) / 'unprocessed' / Path(file_path).name
+                if unprocessed_path.exists():
+                    logger.info(f"[API Action] File found in unprocessed dir: {unprocessed_path}")
+                    file_path = str(unprocessed_path)
+                else:
+                    logger.warning(f"[API Action] File not found: {file_path}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"File not found: {file_path}"
+                    )
 
             # Extract fields
             actress_list = metadata.get('actress', [])

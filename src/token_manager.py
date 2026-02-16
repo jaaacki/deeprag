@@ -13,6 +13,8 @@ from typing import Optional
 
 import requests
 
+from .metrics import TOKEN_REFRESH_TOTAL
+
 logger = logging.getLogger(__name__)
 
 # Refresh when within this many hours of expiry (tokens last 24h)
@@ -163,6 +165,7 @@ class TokenManager:
             # Persist to DB
             self._save_to_db(new_token, expires_at)
 
+            TOKEN_REFRESH_TOTAL.labels(result='success').inc()
             logger.info(
                 'Token refreshed successfully (expires in %.1f hours)',
                 expires_in / 3600,
@@ -170,9 +173,11 @@ class TokenManager:
             return True
 
         except requests.RequestException as e:
+            TOKEN_REFRESH_TOTAL.labels(result='error').inc()
             logger.error('Token refresh failed: %s', e)
             return False
         except Exception as e:
+            TOKEN_REFRESH_TOTAL.labels(result='error').inc()
             logger.error('Unexpected error during token refresh: %s', e)
             return False
 

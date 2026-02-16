@@ -145,7 +145,8 @@ class QueueDB:
                       error_message: Optional[str] = None,
                       new_path: Optional[str] = None,
                       emby_item_id: Optional[str] = None,
-                      metadata_json: Optional[dict] = None) -> Optional[dict]:
+                      metadata_json: Optional[dict] = None,
+                      file_path: Optional[str] = None) -> Optional[dict]:
         """Update the status and optional fields of a queue item.
 
         Returns the updated row as a dict, or None if not found.
@@ -171,6 +172,10 @@ class QueueDB:
         if metadata_json is not None:
             fields.append('metadata_json = %s')
             values.append(json.dumps(metadata_json))
+
+        if file_path is not None:
+            fields.append('file_path = %s')
+            values.append(file_path)
 
         # On error, increment retry_count and set next_retry_at
         if status == 'error':
