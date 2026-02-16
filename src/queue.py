@@ -111,8 +111,37 @@ class QueueDB:
             return dict(row)
         except psycopg2.errors.UniqueViolation:
             conn.rollback()
+            # If the existing entry is completed, reset it for reprocessing
+            existing = self.get_by_file_path(file_path)
+            if existing and existing['status'] == 'completed':
+                logger.info('Re-queuing completed file: %s', file_path)
+                conn = self._get_conn()
+                try:
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        cur.execute(
+                            """UPDATE processing_queue
+                               SET status = 'pending', error_message = NULL,
+                                   new_path = NULL, emby_item_id = NULL,
+                                   metadata_json = NULL, retry_count = 0,
+                                   next_retry_at = NULL, movie_code = %s,
+                                   actress = %s, subtitle = %s,
+                                   updated_at = NOW()
+                               WHERE file_path = %s
+                               RETURNING *""",
+                            (movie_code, actress, subtitle, file_path),
+                        )
+                        row = cur.fetchone()
+                    conn.commit()
+                    if row:
+                        logger.info('Queue item re-queued: id=%s file=%s', row['id'], file_path)
+                        return dict(row)
+                except Exception:
+                    conn.rollback()
+                    raise
+                finally:
+                    self._put_conn(conn)
             logger.warning('File already in queue: %s', file_path)
-            return self.get_by_file_path(file_path)
+            return existing
         except Exception:
             conn.rollback()
             raise
