@@ -1,252 +1,587 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Emby Processor Dashboard</title>
+    <title>Emby Processor</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        body { background-color: #f8f9fa; padding-top: 20px; }
-        .stat-card { transition: transform 0.2s; }
-        .stat-card:hover { transform: translateY(-5px); }
-        .stat-value { font-size: 2.5rem; font-weight: bold; }
-        .stat-label { color: #6c757d; text-transform: uppercase; font-size: 0.875rem; }
-        .status-badge { font-size: 0.75rem; padding: 0.25rem 0.5rem; }
-        .log-viewer { background: #212529; color: #f8f9fa; font-family: 'Courier New', monospace; font-size: 0.875rem; height: 600px; overflow-y: auto; padding: 1rem; border-radius: 0.375rem; white-space: pre-wrap; word-break: break-all; }
-        .queue-table { font-size: 0.875rem; }
-        .action-btn { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
-        #refreshIndicator { display: none; }
+        :root {
+            --bg-base: #0b0d12;
+            --bg-surface: #13161e;
+            --bg-surface-hover: #1a1e2a;
+            --bg-elevated: #1e2230;
+            --border: #262d40;
+            --border-subtle: #1c2030;
+            --text-primary: #e2e5ee;
+            --text-secondary: #7a82a0;
+            --text-muted: #4d5570;
+            --accent: #e4a03a;
+            --accent-dim: rgba(228,160,58,0.12);
+            --green: #34d399;
+            --green-dim: rgba(52,211,153,0.12);
+            --red: #f43f5e;
+            --red-dim: rgba(244,63,94,0.12);
+            --yellow: #fbbf24;
+            --yellow-dim: rgba(251,191,36,0.12);
+            --blue: #60a5fa;
+            --blue-dim: rgba(96,165,250,0.12);
+            --purple: #a78bfa;
+            --purple-dim: rgba(167,139,250,0.12);
+            --font-display: 'Sora', sans-serif;
+            --font-body: 'DM Sans', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+            --radius: 8px;
+            --radius-lg: 10px;
+        }
+
+        [data-bs-theme="dark"] {
+            --bs-body-bg: var(--bg-base);
+            --bs-body-color: var(--text-primary);
+            --bs-border-color: var(--border);
+            --bs-secondary-bg: var(--bg-elevated);
+            --bs-tertiary-bg: var(--bg-surface);
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg-base);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            font-size: 0.9rem;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            min-height: 100vh;
+            background-image:
+                radial-gradient(ellipse at 20% 0%, rgba(228,160,58,0.03) 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 100%, rgba(96,165,250,0.02) 0%, transparent 60%);
+        }
+
+        /* ===== Navbar ===== */
+        .ep-navbar {
+            position: sticky;
+            top: 0;
+            z-index: 1030;
+            background: rgba(19,22,30,0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-subtle);
+            box-shadow: 0 1px 24px rgba(0,0,0,0.25), 0 1px 0 rgba(228,160,58,0.06);
+            padding: 0 1.5rem;
+            height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .ep-navbar .brand {
+            display: flex; align-items: center; gap: 0.6rem;
+            font-family: var(--font-display); font-weight: 600; font-size: 1.05rem;
+            color: var(--text-primary); text-decoration: none;
+        }
+        .ep-navbar .brand-icon {
+            color: var(--accent); font-size: 1.25rem;
+            filter: drop-shadow(0 0 6px rgba(228,160,58,0.3));
+        }
+        .ep-navbar .nav-center {
+            display: flex; align-items: center; gap: 0.75rem;
+            font-size: 0.78rem; color: var(--text-muted);
+        }
+        .status-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: var(--green); display: inline-block;
+            box-shadow: 0 0 6px rgba(52,211,153,0.4);
+            animation: pulse-dot 2.5s ease-in-out infinite;
+        }
+        @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        #refreshIndicator { display: none; width: 0.75rem; height: 0.75rem; border-width: 0.12em; color: var(--accent); }
         #refreshIndicator.active { display: inline-block; }
-        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1090; }
-        .btn-loading .spinner-border { width: 0.875rem; height: 0.875rem; border-width: 0.15em; }
-        .pagination { margin-bottom: 0; }
-        .pagination .page-link { font-size: 0.8rem; padding: 0.25rem 0.6rem; }
-        .page-info { font-size: 0.8rem; color: #6c757d; }
-        /* Pipeline progress indicator */
+        .ep-navbar .nav-actions { display: flex; align-items: center; gap: 0.25rem; }
+        .btn-nav {
+            background: transparent; border: 1px solid transparent; color: var(--text-secondary);
+            border-radius: 6px; padding: 0.3rem 0.55rem; font-size: 0.85rem;
+            transition: all 0.15s;
+        }
+        .btn-nav:hover { background: var(--bg-surface-hover); color: var(--text-primary); border-color: var(--border); }
+
+        /* ===== Main Content ===== */
+        .main-content { max-width: 1440px; margin: 0 auto; padding: 1.25rem 1.5rem 2rem; }
+
+        /* ===== Metrics Strip ===== */
+        .metrics-strip {
+            display: flex; align-items: center; flex-wrap: wrap; gap: 0;
+            background: var(--bg-surface); border: 1px solid var(--border-subtle);
+            border-radius: var(--radius); padding: 0.55rem 0; margin-bottom: 1rem;
+            font-size: 0.78rem; color: var(--text-secondary);
+            animation: fadeIn 0.4s ease;
+        }
+        .metrics-strip .m-item {
+            display: flex; align-items: center; gap: 0.4rem;
+            padding: 0 1.25rem; white-space: nowrap;
+        }
+        .metrics-strip .m-item i { font-size: 0.85rem; }
+        .metrics-strip .m-divider { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
+        .metrics-strip .m-val { font-family: var(--font-display); font-weight: 600; color: var(--text-primary); }
+        .metrics-strip .m-accent { color: var(--accent); }
+
+        /* ===== Stats Grid ===== */
+        .stats-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.75rem; margin-bottom: 1.25rem; }
+        @media (max-width: 1100px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 600px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+
+        .stat-card {
+            background: var(--bg-surface); border: 1px solid var(--border-subtle);
+            border-radius: var(--radius); padding: 0.85rem 1rem;
+            border-left: 3px solid var(--border); transition: transform 0.2s, background 0.2s;
+            animation: fadeInUp 0.4s ease both;
+        }
+        .stat-card:nth-child(1) { animation-delay: 0.03s; }
+        .stat-card:nth-child(2) { animation-delay: 0.06s; }
+        .stat-card:nth-child(3) { animation-delay: 0.09s; }
+        .stat-card:nth-child(4) { animation-delay: 0.12s; }
+        .stat-card:nth-child(5) { animation-delay: 0.15s; }
+        .stat-card:nth-child(6) { animation-delay: 0.18s; }
+        .stat-card:hover { transform: translateY(-2px); background: var(--bg-surface-hover); }
+        .stat-card .stat-icon {
+            width: 30px; height: 30px; border-radius: 7px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.85rem; margin-bottom: 0.5rem;
+        }
+        .stat-card .stat-value {
+            font-family: var(--font-display); font-size: 1.65rem; font-weight: 700;
+            line-height: 1; margin-bottom: 0.2rem;
+        }
+        .stat-card .stat-label {
+            font-size: 0.7rem; color: var(--text-secondary);
+            text-transform: uppercase; letter-spacing: 0.04em; font-weight: 500;
+        }
+        .stat-card .stat-sub { font-size: 0.68rem; color: var(--text-muted); margin-top: 0.2rem; }
+
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* ===== Section Cards ===== */
+        .section-card {
+            background: var(--bg-surface); border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg); margin-bottom: 1.25rem; overflow: visible;
+        }
+        .section-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0.65rem 1.15rem; border-bottom: 1px solid var(--border-subtle);
+        }
+        .section-header h3 {
+            font-family: var(--font-display); font-size: 0.9rem; font-weight: 600;
+            margin: 0; display: flex; align-items: center; gap: 0.5rem; color: var(--text-primary);
+        }
+        .section-header h3 i { color: var(--text-muted); font-size: 1rem; }
+        .section-header .header-badge {
+            font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 10px;
+            background: var(--accent-dim); color: var(--accent); font-weight: 600;
+            font-family: var(--font-display);
+        }
+        .section-body { padding: 1rem 1.15rem; }
+        .section-body.no-pad { padding: 0; }
+
+        /* ===== Queue Toolbar ===== */
+        .queue-toolbar {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-wrap: wrap; gap: 0.5rem; padding: 0.75rem 1.15rem;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .queue-toolbar .toolbar-left { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+        .queue-toolbar .toolbar-right { display: flex; align-items: center; gap: 0.5rem; }
+        .page-info { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
+
+        /* ===== Queue Table ===== */
+        .queue-table { font-size: 0.82rem; margin: 0; color: var(--text-primary); }
+        .queue-table thead th {
+            font-family: var(--font-display); font-size: 0.68rem; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted);
+            border-bottom: 1px solid var(--border); padding: 0.55rem 0.75rem;
+            background: rgba(30,34,48,0.5); white-space: nowrap;
+        }
+        .queue-table tbody td {
+            padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--border-subtle);
+            vertical-align: middle;
+        }
+        .queue-table tbody tr:hover { background: var(--bg-surface-hover); }
+        .queue-table code { color: var(--accent); font-family: var(--font-mono); font-size: 0.78rem; }
+
+        /* ===== Pipeline Progress ===== */
         .pipeline-progress { display: flex; align-items: center; gap: 0; white-space: nowrap; }
         .pipeline-step { display: flex; flex-direction: column; align-items: center; position: relative; }
-        .pipeline-step .step-icon { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; border: 2px solid #dee2e6; color: #adb5bd; background: #fff; position: relative; z-index: 1; }
-        .pipeline-step.done .step-icon { border-color: #198754; color: #fff; background: #198754; }
-        .pipeline-step.current .step-icon { border-color: #0d6efd; color: #0d6efd; background: #e7f1ff; animation: pulse-border 1.5s infinite; }
-        .pipeline-connector { width: 12px; height: 2px; background: #dee2e6; flex-shrink: 0; margin-top: -8px; }
-        .pipeline-connector.done { background: #198754; }
-        .pipeline-step .step-label { font-size: 0.55rem; color: #6c757d; margin-top: 1px; line-height: 1; }
-        .pipeline-step.done .step-label { color: #198754; }
-        .pipeline-step.current .step-label { color: #0d6efd; font-weight: 600; }
-        @keyframes pulse-border { 0%, 100% { box-shadow: 0 0 0 0 rgba(13,110,253,0.3); } 50% { box-shadow: 0 0 0 3px rgba(13,110,253,0.1); } }
-        .dropdown-item.disabled { opacity: 0.5; pointer-events: none; }
+        .pipeline-step .step-icon {
+            width: 24px; height: 24px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; font-size: 0.6rem;
+            border: 2px solid var(--border); color: var(--text-muted);
+            background: var(--bg-surface); position: relative; z-index: 1;
+            transition: all 0.3s;
+        }
+        .pipeline-step.done .step-icon {
+            border-color: var(--green); color: #fff; background: var(--green);
+            box-shadow: 0 0 8px rgba(52,211,153,0.3);
+        }
+        .pipeline-step.current .step-icon {
+            border-color: var(--blue); color: var(--blue); background: var(--blue-dim);
+            animation: pulse-step 1.5s infinite;
+        }
+        .pipeline-connector {
+            width: 14px; height: 2px; background: var(--border);
+            flex-shrink: 0; margin-top: -8px; transition: all 0.3s;
+        }
+        .pipeline-connector.done { background: var(--green); box-shadow: 0 0 4px rgba(52,211,153,0.15); }
+        .pipeline-step .step-label {
+            font-size: 0.52rem; color: var(--text-muted); margin-top: 2px;
+            line-height: 1; font-weight: 500; letter-spacing: 0.02em;
+        }
+        .pipeline-step.done .step-label { color: var(--green); }
+        .pipeline-step.current .step-label { color: var(--blue); font-weight: 600; }
+        @keyframes pulse-step {
+            0%,100% { box-shadow: 0 0 0 0 rgba(96,165,250,0.4); }
+            50% { box-shadow: 0 0 0 4px rgba(96,165,250,0.1); }
+        }
+
+        /* ===== Badges ===== */
+        .badge { font-weight: 500; font-size: 0.68rem; padding: 0.28em 0.55em; border-radius: 5px; }
+        .badge-success { background: var(--green-dim); color: var(--green); }
+        .badge-error { background: var(--red-dim); color: var(--red); }
+        .badge-warning { background: var(--yellow-dim); color: var(--yellow); }
+        .badge-info { background: var(--blue-dim); color: var(--blue); }
+        .badge-secondary { background: rgba(122,130,160,0.1); color: var(--text-secondary); }
+        .badge-processing { background: var(--purple-dim); color: var(--purple); }
+
+        /* ===== Action Buttons ===== */
+        .action-btn {
+            padding: 0.2rem 0.45rem; font-size: 0.75rem;
+            border-radius: 5px; border-color: var(--border);
+            color: var(--text-secondary); transition: all 0.15s;
+        }
+        .action-btn:hover { background: var(--bg-elevated); color: var(--text-primary); border-color: var(--text-muted); }
+        .dropdown-item.disabled { opacity: 0.35; pointer-events: none; }
+
+        /* ===== Download Cards ===== */
+        .dl-card {
+            background: var(--bg-elevated); border: 1px solid var(--border-subtle);
+            border-radius: var(--radius); padding: 0.6rem 0.85rem;
+            margin-bottom: 0.5rem; font-size: 0.8rem; transition: border-color 0.2s;
+        }
+        .dl-card.dl-downloading { border-left: 3px solid var(--blue); }
+        .dl-card.dl-completed { border-left: 3px solid var(--green); }
+        .dl-card.dl-failed { border-left: 3px solid var(--red); }
+        .dl-card.dl-queued { border-left: 3px solid var(--text-muted); }
+        .dl-output {
+            background: #0a0c10; color: var(--text-secondary);
+            font-family: var(--font-mono); font-size: 0.7rem;
+            padding: 0.5rem 0.75rem; border-radius: 5px;
+            max-height: 180px; overflow-y: auto; white-space: pre-wrap;
+            margin-top: 0.4rem;
+        }
+
+        /* ===== Logs Section ===== */
+        .logs-section { margin-bottom: 1.25rem; }
+        .log-viewer {
+            background: #080a0e; color: var(--text-secondary);
+            font-family: var(--font-mono); font-size: 0.78rem;
+            height: 380px; overflow-y: auto; padding: 0.75rem 1rem;
+            white-space: pre-wrap; word-break: break-all; line-height: 1.7;
+            border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+        }
+        .log-line { padding: 0; }
+        .log-info { color: var(--green); }
+        .log-warning { color: var(--yellow); }
+        .log-error { color: var(--red); }
+        .log-debug { color: var(--blue); }
+
+        /* ===== Modal ===== */
+        .modal-content { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+        .modal-header { border-color: var(--border-subtle); padding: 0.85rem 1.25rem; }
+        .modal-title { font-family: var(--font-display); font-size: 1rem; font-weight: 600; }
+        .modal-body { padding: 1.25rem; }
+        .modal-body dt { color: var(--text-muted); font-size: 0.78rem; font-weight: 500; }
+        .modal-body dd { color: var(--text-primary); margin-bottom: 0.6rem; }
+        .modal-body code { color: var(--accent); font-family: var(--font-mono); font-size: 0.78rem; background: var(--bg-elevated); padding: 0.15em 0.35em; border-radius: 3px; }
+        .detail-image {
+            width: 100%; max-width: 280px; border-radius: var(--radius);
+            border: 1px solid var(--border); object-fit: cover;
+        }
+        .detail-meta-pre {
+            background: var(--bg-elevated); color: var(--text-secondary);
+            font-family: var(--font-mono); font-size: 0.7rem;
+            padding: 0.75rem; border-radius: var(--radius);
+            max-height: 250px; overflow-y: auto; border: 1px solid var(--border-subtle);
+        }
+
+        /* ===== Toasts ===== */
+        .toast-container { position: fixed; top: 60px; right: 20px; z-index: 1090; }
+        .toast {
+            border-radius: var(--radius); border: none;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4); font-size: 0.82rem;
+        }
+
+        /* ===== Form Overrides ===== */
+        .form-control, .form-select {
+            background: var(--bg-elevated); border-color: var(--border); color: var(--text-primary);
+            font-size: 0.82rem; border-radius: 6px;
+        }
+        .form-control:focus, .form-select:focus {
+            background: var(--bg-elevated); border-color: var(--accent);
+            color: var(--text-primary); box-shadow: 0 0 0 2px var(--accent-dim);
+        }
+        .form-control::placeholder { color: var(--text-muted); }
+        .form-control-sm, .form-select-sm { font-size: 0.78rem; padding: 0.3rem 0.6rem; }
+        .form-check-input { background-color: var(--bg-elevated); border-color: var(--border); }
+        .form-check-input:checked { background-color: var(--accent); border-color: var(--accent); }
+        .form-check-input:focus { box-shadow: 0 0 0 2px var(--accent-dim); }
+        .form-check-label { font-size: 0.8rem; color: var(--text-secondary); }
+        .form-label { font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 0.3rem; }
+
+        /* ===== Button Overrides ===== */
+        .btn-primary { background: var(--accent); border-color: var(--accent); color: #0b0d12; font-weight: 600; }
+        .btn-primary:hover { background: #d49030; border-color: #d49030; color: #0b0d12; }
+        .btn-outline-secondary { border-color: var(--border); color: var(--text-secondary); font-size: 0.78rem; }
+        .btn-outline-secondary:hover { background: var(--bg-surface-hover); border-color: var(--text-muted); color: var(--text-primary); }
+        .btn-outline-secondary:disabled { border-color: var(--border-subtle); color: var(--text-muted); opacity: 0.5; }
+        .btn-sm { font-size: 0.78rem; padding: 0.25rem 0.55rem; }
+
+        /* ===== Dropdown Overrides ===== */
+        .dropdown-menu {
+            background: var(--bg-elevated); border: 1px solid var(--border);
+            border-radius: var(--radius); box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+            font-size: 0.82rem; padding: 0.35rem;
+        }
+        .dropdown-item { color: var(--text-primary); border-radius: 5px; padding: 0.4rem 0.75rem; }
+        .dropdown-item:hover, .dropdown-item:focus { background: var(--bg-surface-hover); color: var(--text-primary); }
+        .dropdown-divider { border-color: var(--border-subtle); margin: 0.25rem 0; }
+        .dropdown-header { color: var(--text-muted); font-size: 0.68rem; font-family: var(--font-display); letter-spacing: 0.03em; }
+
+        /* ===== Pagination ===== */
+        .pagination-group { display: inline-flex; gap: 2px; }
+        .pagination-group .btn { min-width: 30px; }
+
+        /* ===== Scrollbar ===== */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 768px) {
+            .ep-navbar { padding: 0 1rem; }
+            .ep-navbar .nav-center { display: none; }
+            .main-content { padding: 1rem; }
+            .metrics-strip { flex-wrap: wrap; padding: 0.4rem 0; }
+            .metrics-strip .m-item { padding: 0.3rem 0.75rem; }
+            .metrics-strip .m-divider { display: none; }
+            .queue-toolbar { flex-direction: column; align-items: stretch; }
+            .queue-toolbar .toolbar-right { justify-content: flex-end; }
+            .section-body { padding: 0.75rem; }
+            .log-viewer { height: 280px; font-size: 0.72rem; }
+        }
+
+        /* ===== Utilities ===== */
+        .text-accent { color: var(--accent); }
+        .gap-2 { gap: 0.5rem; }
     </style>
 </head>
 <body>
-    <div class="container-fluid">
-        <!-- Header -->
-        <div class="row mb-4">
-            <div class="col">
-                <h1><i class="bi bi-hdd-network"></i> Emby Processor Dashboard</h1>
-                <p class="text-muted">Real-time queue monitoring and control panel
-                    <span id="refreshIndicator" class="spinner-border spinner-border-sm ms-2"></span>
-                    <span id="lastUpdate" class="ms-2 text-muted"></span>
-                </p>
+    <!-- Navbar -->
+    <nav class="ep-navbar">
+        <div class="brand">
+            <i class="bi bi-film brand-icon"></i>
+            <span>Emby Processor</span>
+        </div>
+        <div class="nav-center">
+            <span class="status-dot"></span>
+            <span id="lastUpdate"></span>
+            <span id="refreshIndicator" class="spinner-border spinner-border-sm"></span>
+        </div>
+        <div class="nav-actions">
+            <button class="btn btn-nav" onclick="refreshData()" title="Refresh now">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+            <button class="btn btn-nav" onclick="toggleLogs()" id="toggleLogsBtn" title="Toggle logs">
+                <i class="bi bi-terminal"></i>
+            </button>
+            <div class="dropdown d-inline-block">
+                <button class="btn btn-nav dropdown-toggle" data-bs-toggle="dropdown" data-bs-auto-close="true" title="Admin actions">
+                    <i class="bi bi-gear"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><h6 class="dropdown-header">Actions</h6></li>
+                    <li><a class="dropdown-item" href="#" onclick="generatePreview(); return false;">
+                        <i class="bi bi-film me-2"></i>Generate Preview
+                    </a></li>
+                    <li><a class="dropdown-item" href="#" onclick="bulkRefreshMetadata(); return false;">
+                        <i class="bi bi-cloud-download me-2"></i>Bulk Refresh Metadata
+                    </a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item text-danger" href="#" onclick="triggerCleanup(); return false;">
+                        <i class="bi bi-trash me-2"></i>Cleanup Old Items
+                    </a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <!-- Metrics Strip -->
+        <div class="metrics-strip">
+            <div class="m-item">
+                <i class="bi bi-check2-circle" style="color:var(--green)"></i>
+                <span class="m-val" id="metric-completed-24h">-</span>
+                <span>processed today</span>
+            </div>
+            <div class="m-divider"></div>
+            <div class="m-item">
+                <i class="bi bi-exclamation-triangle" style="color:var(--red)"></i>
+                <span class="m-val" id="metric-errors-24h">-</span>
+                <span>errors</span>
+                <span class="m-accent">(<span id="metric-error-rate">-</span>%)</span>
+            </div>
+            <div class="m-divider"></div>
+            <div class="m-item">
+                <i class="bi bi-stopwatch" style="color:var(--blue)"></i>
+                <span class="m-val" id="metric-avg-time">-</span><span>s avg</span>
             </div>
         </div>
 
-        <!-- Stats Cards -->
-        <div class="row mb-4" id="statsCards">
-            <div class="col-md-2">
-                <div class="card stat-card border-primary">
-                    <div class="card-body text-center">
-                        <div class="stat-value text-primary" id="stat-total">-</div>
-                        <div class="stat-label">Total</div>
-                    </div>
-                </div>
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card" style="border-left-color: var(--text-secondary);">
+                <div class="stat-icon" style="background: rgba(122,130,160,0.1); color: var(--text-secondary);"><i class="bi bi-stack"></i></div>
+                <div class="stat-value" id="stat-total">-</div>
+                <div class="stat-label">Total</div>
             </div>
-            <div class="col-md-2">
-                <div class="card stat-card border-success">
-                    <div class="card-body text-center">
-                        <div class="stat-value text-success" id="stat-completed">-</div>
-                        <div class="stat-label">Completed</div>
-                    </div>
-                </div>
+            <div class="stat-card" style="border-left-color: var(--green);">
+                <div class="stat-icon" style="background: var(--green-dim); color: var(--green);"><i class="bi bi-check-circle"></i></div>
+                <div class="stat-value" style="color: var(--green);" id="stat-completed">-</div>
+                <div class="stat-label">Completed</div>
+                <div class="stat-sub" id="stat-completed-24h-sub"></div>
             </div>
-            <div class="col-md-2">
-                <div class="card stat-card border-warning">
-                    <div class="card-body text-center">
-                        <div class="stat-value text-warning" id="stat-pending">-</div>
-                        <div class="stat-label">Pending</div>
-                    </div>
-                </div>
+            <div class="stat-card" style="border-left-color: var(--yellow);">
+                <div class="stat-icon" style="background: var(--yellow-dim); color: var(--yellow);"><i class="bi bi-hourglass-split"></i></div>
+                <div class="stat-value" style="color: var(--yellow);" id="stat-pending">-</div>
+                <div class="stat-label">Pending</div>
             </div>
-            <div class="col-md-2">
-                <div class="card stat-card border-info">
-                    <div class="card-body text-center">
-                        <div class="stat-value text-info" id="stat-processing">-</div>
-                        <div class="stat-label">Processing</div>
-                    </div>
-                </div>
+            <div class="stat-card" style="border-left-color: var(--purple);">
+                <div class="stat-icon" style="background: var(--purple-dim); color: var(--purple);"><i class="bi bi-gear-wide-connected"></i></div>
+                <div class="stat-value" style="color: var(--purple);" id="stat-processing">-</div>
+                <div class="stat-label">Processing</div>
             </div>
-            <div class="col-md-2">
-                <div class="card stat-card border-danger">
-                    <div class="card-body text-center">
-                        <div class="stat-value text-danger" id="stat-error">-</div>
-                        <div class="stat-label">Errors</div>
-                    </div>
-                </div>
+            <div class="stat-card" style="border-left-color: var(--red);">
+                <div class="stat-icon" style="background: var(--red-dim); color: var(--red);"><i class="bi bi-x-circle"></i></div>
+                <div class="stat-value" style="color: var(--red);" id="stat-error">-</div>
+                <div class="stat-label">Errors</div>
+                <div class="stat-sub" id="stat-error-24h-sub"></div>
             </div>
-            <div class="col-md-2">
-                <div class="card stat-card border-secondary">
-                    <div class="card-body text-center">
-                        <div class="stat-value text-secondary" id="stat-moved">-</div>
-                        <div class="stat-label">Moved</div>
-                    </div>
-                </div>
+            <div class="stat-card" style="border-left-color: var(--blue);">
+                <div class="stat-icon" style="background: var(--blue-dim); color: var(--blue);"><i class="bi bi-arrows-move"></i></div>
+                <div class="stat-value" style="color: var(--blue);" id="stat-moved">-</div>
+                <div class="stat-label">Moved</div>
             </div>
         </div>
 
-        <!-- Global Actions -->
-        <div class="row mb-3">
-            <div class="col text-end">
-                <div class="form-check form-check-inline me-3">
-                    <input class="form-check-input" type="checkbox" id="forceFreshMetadata" onchange="saveForceFreshSetting()">
-                    <label class="form-check-label" for="forceFreshMetadata" title="Bypass cache and fetch fresh metadata from API">
-                        <i class="bi bi-lightning-charge"></i> Force Fresh
-                    </label>
+        <!-- Downloads Section -->
+        <div class="section-card">
+            <div class="section-header">
+                <h3><i class="bi bi-download"></i> Downloads</h3>
+                <div class="d-flex align-items-center gap-2">
+                    <select class="form-select form-select-sm" id="dlFilterStatus" style="width:130px;" onchange="dlCurrentPage=1; refreshDownloads()">
+                        <option value="">All</option>
+                        <option value="queued">Queued</option>
+                        <option value="downloading">Downloading</option>
+                        <option value="completed">Completed</option>
+                        <option value="failed">Failed</option>
+                    </select>
+                    <span class="page-info" id="dlPageInfo"></span>
+                    <div class="pagination-group" id="dlPagination"></div>
                 </div>
-                <button class="btn btn-outline-primary" onclick="refreshData()">
-                    <i class="bi bi-arrow-clockwise"></i> Refresh
-                </button>
-                <button class="btn btn-outline-secondary" onclick="toggleLogs()" id="toggleLogsBtn">
-                    <i class="bi bi-terminal"></i> Hide Logs
-                </button>
-                <button class="btn btn-outline-success" onclick="generatePreview()">
-                    <i class="bi bi-film"></i> Generate Preview
-                </button>
-                <button class="btn btn-outline-info" onclick="bulkRefreshMetadata()">
-                    <i class="bi bi-cloud-download"></i> Bulk Refresh Metadata
-                </button>
-                <button class="btn btn-outline-danger" onclick="triggerCleanup()">
-                    <i class="bi bi-trash"></i> Cleanup Old Items
-                </button>
             </div>
-        </div>
-
-        <!-- Download Section -->
-        <div class="row mb-4">
-            <div class="col">
-                <div class="card border-primary">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0"><i class="bi bi-download"></i> yt-dlp Download</h5>
-                    </div>
-                    <div class="card-body">
-                        <form id="downloadForm" onsubmit="submitDownload(event)">
-                            <div class="row g-2 align-items-end">
-                                <div class="col-md-6">
-                                    <label for="downloadUrl" class="form-label">URL</label>
-                                    <input type="url" class="form-control" id="downloadUrl" placeholder="https://..." required>
-                                </div>
-                                <div class="col-md-4">
-                                    <label for="downloadFilename" class="form-label">Filename <small class="text-muted">(optional)</small></label>
-                                    <input type="text" class="form-control" id="downloadFilename" placeholder="custom-filename">
-                                </div>
-                                <div class="col-md-2">
-                                    <button type="submit" class="btn btn-primary w-100" id="downloadBtn">
-                                        <i class="bi bi-download"></i> Download
-                                    </button>
-                                </div>
-                            </div>
-                        </form>
-                        <!-- Download Filters -->
-                        <div class="row g-2 mt-2 align-items-center">
-                            <div class="col-md-3">
-                                <select class="form-select form-select-sm" id="dlFilterStatus" onchange="dlCurrentPage=1; refreshDownloads()">
-                                    <option value="">All Statuses</option>
-                                    <option value="queued">Queued</option>
-                                    <option value="downloading">Downloading</option>
-                                    <option value="completed">Completed</option>
-                                    <option value="failed">Failed</option>
-                                </select>
-                            </div>
-                            <div class="col-md-9 text-end">
-                                <span class="page-info" id="dlPageInfo"></span>
-                                <div class="btn-group btn-group-sm ms-2" id="dlPagination"></div>
-                            </div>
+            <div class="section-body">
+                <form id="downloadForm" onsubmit="submitDownload(event)">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-6">
+                            <label for="downloadUrl" class="form-label">URL</label>
+                            <input type="url" class="form-control" id="downloadUrl" placeholder="https://..." required>
                         </div>
-                        <!-- Recent Downloads -->
-                        <div id="recentDownloads" class="mt-3" style="display: none;">
-                            <div id="downloadsListContainer"></div>
+                        <div class="col-md-4">
+                            <label for="downloadFilename" class="form-label">Filename <small class="text-muted">(optional)</small></label>
+                            <input type="text" class="form-control" id="downloadFilename" placeholder="custom-filename">
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-primary w-100" id="downloadBtn">
+                                <i class="bi bi-download"></i> Download
+                            </button>
                         </div>
                     </div>
+                </form>
+                <div id="recentDownloads" class="mt-3" style="display: none;">
+                    <div id="downloadsListContainer"></div>
                 </div>
             </div>
         </div>
 
-        <!-- Queue Table -->
-        <div class="row mb-4">
-            <div class="col">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0"><i class="bi bi-list-ul"></i> Queue Items (<span id="queueCount">0</span>)</h5>
-                    </div>
-                    <div class="card-body p-0" style="overflow: visible;">
-                        <!-- Queue Filters -->
-                        <div class="row g-2 p-3 pb-0 align-items-center">
-                            <div class="col-md-3">
-                                <select class="form-select form-select-sm" id="filterStatus">
-                                    <option value="">All Statuses</option>
-                                    <option value="pending">Pending</option>
-                                    <option value="processing">Processing</option>
-                                    <option value="moved">Moved</option>
-                                    <option value="emby_pending">Emby Pending</option>
-                                    <option value="completed">Completed</option>
-                                    <option value="error">Error</option>
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <input type="text" class="form-control form-control-sm" id="searchQuery" placeholder="Search movie code or actress">
-                            </div>
-                            <div class="col-md-6 text-end">
-                                <span class="page-info" id="queuePageInfo"></span>
-                                <div class="btn-group btn-group-sm ms-2" id="queuePagination"></div>
-                            </div>
-                        </div>
-                        <table class="table table-hover queue-table mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Movie Code</th>
-                                    <th>Actress</th>
-                                    <th>Status</th>
-                                    <th>Pipeline</th>
-                                    <th>Created</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="queueTableBody">
-                                <tr><td colspan="7" class="text-center">Loading...</td></tr>
-                            </tbody>
-                        </table>
+        <!-- Queue Section -->
+        <div class="section-card">
+            <div class="section-header">
+                <h3><i class="bi bi-list-ul"></i> Queue <span class="header-badge" id="queueCount">0</span></h3>
+            </div>
+            <div class="queue-toolbar">
+                <div class="toolbar-left">
+                    <select class="form-select form-select-sm" id="filterStatus" style="width: 140px;">
+                        <option value="">All Statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="processing">Processing</option>
+                        <option value="moved">Moved</option>
+                        <option value="emby_pending">Emby Pending</option>
+                        <option value="completed">Completed</option>
+                        <option value="error">Error</option>
+                    </select>
+                    <input type="text" class="form-control form-control-sm" id="searchQuery" placeholder="Search code or actress" style="width: 180px;">
+                    <div class="form-check ms-1">
+                        <input class="form-check-input" type="checkbox" id="forceFreshMetadata" onchange="saveForceFreshSetting()">
+                        <label class="form-check-label" for="forceFreshMetadata" title="Bypass cache for metadata/emby actions">
+                            <i class="bi bi-lightning-charge" style="color:var(--accent)"></i> Fresh
+                        </label>
                     </div>
                 </div>
+                <div class="toolbar-right">
+                    <span class="page-info" id="queuePageInfo"></span>
+                    <div class="pagination-group" id="queuePagination"></div>
+                </div>
+            </div>
+            <div style="overflow: visible;">
+                <table class="table table-hover queue-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Movie Code</th>
+                            <th>Actress</th>
+                            <th>Status</th>
+                            <th>Pipeline</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="queueTableBody">
+                        <tr><td colspan="7" class="text-center" style="color:var(--text-muted); padding:2rem;">Loading...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <!-- Logs Section (Visible by Default) -->
-        <div class="row mb-4" id="logsSection" style="display: block;">
-            <div class="col">
-                <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-terminal-fill"></i> Live Logs</h5>
-                        <button class="btn btn-sm btn-outline-light" onclick="refreshLogs()">
-                            <i class="bi bi-arrow-clockwise"></i> Refresh
-                        </button>
-                    </div>
-                    <div class="card-body p-0">
-                        <div class="log-viewer" id="logViewer">Loading logs...</div>
-                    </div>
-                </div>
+        <!-- Logs Section -->
+        <div class="section-card logs-section" id="logsSection" style="display: block;">
+            <div class="section-header" style="cursor:pointer;" onclick="toggleLogs()">
+                <h3><i class="bi bi-terminal-fill"></i> Live Logs</h3>
+                <button class="btn btn-nav btn-sm" onclick="refreshLogs(); event.stopPropagation();" title="Refresh logs">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
             </div>
+            <div class="log-viewer" id="logViewer">Loading logs...</div>
         </div>
-    </div>
+    </main>
 
     <!-- Item Detail Modal -->
     <div class="modal fade" id="itemDetailModal" tabindex="-1">
@@ -256,9 +591,7 @@
                     <h5 class="modal-title">Item Details</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body" id="itemDetailBody">
-                    Loading...
-                </div>
+                <div class="modal-body" id="itemDetailBody">Loading...</div>
             </div>
         </div>
     </div>
@@ -281,7 +614,7 @@
         let dlCurrentPage = 1;
         let dlTotalPages = 1;
 
-        // Load config (Emby URL, server ID)
+        // Load config
         async function loadConfig() {
             try {
                 const res = await fetch(`${API_BASE}/api/config`);
@@ -300,92 +633,55 @@
             return url;
         }
 
-        // Initialize on page load
+        // Initialize
         document.addEventListener('DOMContentLoaded', async function() {
             await loadConfig();
             refreshData();
             startAutoRefresh();
 
-            // Load force fresh setting from localStorage
             const forceFresh = localStorage.getItem('forceFreshMetadata') === 'true';
             document.getElementById('forceFreshMetadata').checked = forceFresh;
 
-            // Start logs auto-refresh since logs are visible by default
             refreshLogs();
             startLogsAutoRefresh();
 
-            // Event listeners for queue filters
             document.getElementById('filterStatus').addEventListener('change', () => { queueCurrentPage = 1; refreshQueue(); });
             document.getElementById('searchQuery').addEventListener('input', debounce(() => { queueCurrentPage = 1; refreshQueue(); }, 500));
         });
 
-        // Save force fresh setting to localStorage
         function saveForceFreshSetting() {
             const forceFresh = document.getElementById('forceFreshMetadata').checked;
             localStorage.setItem('forceFreshMetadata', forceFresh);
-            if (forceFresh) {
-                showToast('Force Fresh enabled - bypassing cache', 'info');
-            } else {
-                showToast('Force Fresh disabled - using cached data', 'info');
-            }
+            showToast(forceFresh ? 'Force Fresh enabled' : 'Force Fresh disabled', 'info');
         }
 
-        // Get current force fresh setting
         function getForceFresh() {
             return document.getElementById('forceFreshMetadata').checked;
         }
 
-        // Auto-refresh every 5 seconds
-        function startAutoRefresh() {
-            autoRefreshInterval = setInterval(refreshData, 5000);
-        }
+        // Auto-refresh
+        function startAutoRefresh() { autoRefreshInterval = setInterval(refreshData, 5000); }
+        function stopAutoRefresh() { if (autoRefreshInterval) clearInterval(autoRefreshInterval); }
+        function startLogsAutoRefresh() { if (!logsRefreshInterval) logsRefreshInterval = setInterval(refreshLogs, 2000); }
+        function stopLogsAutoRefresh() { if (logsRefreshInterval) { clearInterval(logsRefreshInterval); logsRefreshInterval = null; } }
 
-        function stopAutoRefresh() {
-            if (autoRefreshInterval) {
-                clearInterval(autoRefreshInterval);
-            }
-        }
-
-        // Auto-refresh logs every 2 seconds when visible
-        function startLogsAutoRefresh() {
-            if (!logsRefreshInterval) {
-                logsRefreshInterval = setInterval(refreshLogs, 2000);
-            }
-        }
-
-        function stopLogsAutoRefresh() {
-            if (logsRefreshInterval) {
-                clearInterval(logsRefreshInterval);
-                logsRefreshInterval = null;
-            }
-        }
-
-        // Check if any dropdown is currently open
         function isAnyDropdownOpen() {
-            const dropdowns = document.querySelectorAll('.dropdown-menu.show');
-            return dropdowns.length > 0;
+            return document.querySelectorAll('.dropdown-menu.show').length > 0;
         }
 
-        // Refresh all data (skip if dropdown is open to avoid destroying it)
         async function refreshData() {
-            // Don't refresh if user has a dropdown open
-            if (isAnyDropdownOpen()) {
-                console.log('Skipping refresh - dropdown is open');
-                return;
-            }
-
+            if (isAnyDropdownOpen()) return;
             showRefreshIndicator();
-            await Promise.all([refreshStats(), refreshQueue(), refreshDownloads()]);
+            await Promise.all([refreshStats(), refreshMetricsSummary(), refreshQueue(), refreshDownloads()]);
             hideRefreshIndicator();
             updateLastUpdateTime();
         }
 
-        // Fetch and update stats
+        // Stats
         async function refreshStats() {
             try {
                 const response = await fetch(`${API_BASE}/api/stats`);
                 const data = await response.json();
-
                 document.getElementById('stat-total').textContent = data.total || 0;
                 document.getElementById('stat-completed').textContent = data.completed || 0;
                 document.getElementById('stat-pending').textContent = data.pending || 0;
@@ -397,61 +693,63 @@
             }
         }
 
-        // === Pagination helper ===
+        // 24h Metrics Summary
+        async function refreshMetricsSummary() {
+            try {
+                const response = await fetch(`${API_BASE}/api/metrics-summary`);
+                const data = await response.json();
+
+                const c24h = data.completed_24h || 0;
+                const e24h = data.errors_24h || 0;
+                const rate = data.error_rate_24h != null ? data.error_rate_24h.toFixed(1) : '-';
+                const avg = data.avg_processing_seconds != null ? data.avg_processing_seconds.toFixed(1) : '-';
+
+                document.getElementById('metric-completed-24h').textContent = c24h;
+                document.getElementById('metric-errors-24h').textContent = e24h;
+                document.getElementById('metric-error-rate').textContent = rate;
+                document.getElementById('metric-avg-time').textContent = avg;
+
+                const completedSub = document.getElementById('stat-completed-24h-sub');
+                if (completedSub) completedSub.textContent = c24h > 0 ? `+${c24h} today` : '';
+
+                const errorSub = document.getElementById('stat-error-24h-sub');
+                if (errorSub) errorSub.textContent = e24h > 0 ? `+${e24h} today` : '';
+            } catch (error) {
+                console.error('Failed to fetch metrics summary:', error);
+            }
+        }
+
+        // Pagination
         function renderPagination(containerId, infoId, currentPage, totalPages, total, onPageChange) {
             const container = document.getElementById(containerId);
             const info = document.getElementById(infoId);
             const start = (currentPage - 1) * PAGE_SIZE + 1;
             const end = Math.min(currentPage * PAGE_SIZE, total);
-
             info.textContent = total > 0 ? `${start}-${end} of ${total}` : '0 items';
+            if (totalPages <= 1) { container.innerHTML = ''; return; }
 
-            if (totalPages <= 1) {
-                container.innerHTML = '';
-                return;
-            }
-
-            let html = '';
-            html += `<button class="btn btn-outline-secondary btn-sm" ${currentPage <= 1 ? 'disabled' : ''} onclick="${onPageChange}(${currentPage - 1})"><i class="bi bi-chevron-left"></i></button>`;
-
-            // Show page numbers with ellipsis
+            let html = `<button class="btn btn-outline-secondary btn-sm" ${currentPage <= 1 ? 'disabled' : ''} onclick="${onPageChange}(${currentPage - 1})"><i class="bi bi-chevron-left"></i></button>`;
             const pages = [];
             pages.push(1);
             if (currentPage > 3) pages.push('...');
-            for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
-                pages.push(i);
-            }
+            for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) pages.push(i);
             if (currentPage < totalPages - 2) pages.push('...');
             if (totalPages > 1) pages.push(totalPages);
-
             for (const p of pages) {
-                if (p === '...') {
-                    html += `<button class="btn btn-outline-secondary btn-sm" disabled>...</button>`;
-                } else {
-                    html += `<button class="btn btn-${p === currentPage ? 'primary' : 'outline-secondary'} btn-sm" onclick="${onPageChange}(${p})">${p}</button>`;
-                }
+                if (p === '...') html += `<button class="btn btn-outline-secondary btn-sm" disabled>...</button>`;
+                else html += `<button class="btn btn-${p === currentPage ? 'primary' : 'outline-secondary'} btn-sm" onclick="${onPageChange}(${p})">${p}</button>`;
             }
-
             html += `<button class="btn btn-outline-secondary btn-sm" ${currentPage >= totalPages ? 'disabled' : ''} onclick="${onPageChange}(${currentPage + 1})"><i class="bi bi-chevron-right"></i></button>`;
-
             container.innerHTML = html;
         }
 
-        function goToQueuePage(page) {
-            queueCurrentPage = page;
-            refreshQueue();
-        }
+        function goToQueuePage(page) { queueCurrentPage = page; refreshQueue(); }
+        function goToDlPage(page) { dlCurrentPage = page; refreshDownloads(); }
 
-        function goToDlPage(page) {
-            dlCurrentPage = page;
-            refreshDownloads();
-        }
-
-        // Fetch and update queue table
+        // Queue Table
         async function refreshQueue() {
             const status = document.getElementById('filterStatus').value;
             const search = document.getElementById('searchQuery').value;
-
             const params = new URLSearchParams();
             if (status) params.append('status', status);
             if (search) params.append('search', search);
@@ -464,17 +762,12 @@
 
                 document.getElementById('queueCount').textContent = data.total;
                 queueTotalPages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
-
-                // Clamp page
-                if (queueCurrentPage > queueTotalPages) {
-                    queueCurrentPage = queueTotalPages;
-                }
-
+                if (queueCurrentPage > queueTotalPages) queueCurrentPage = queueTotalPages;
                 renderPagination('queuePagination', 'queuePageInfo', queueCurrentPage, queueTotalPages, data.total, 'goToQueuePage');
 
                 const tbody = document.getElementById('queueTableBody');
                 if (data.items.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No items found</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:var(--text-muted);padding:2rem;">No items found</td></tr>';
                     return;
                 }
 
@@ -483,8 +776,6 @@
                     const hasMeta = !!item.has_metadata;
                     const hasPath = !!item.new_path;
                     const hasEmby = !!item.emby_item_id;
-
-                    // Disabled state + tooltips for actions
                     const fetchDisabled = !hasCode;
                     const renameDisabled = !hasCode || !hasMeta;
                     const embyDisabled = !hasPath;
@@ -492,55 +783,58 @@
                     return `
                     <tr>
                         <td><code>${item.id}</code></td>
-                        <td><strong>${item.movie_code || '-'}</strong><br><small class="text-muted text-truncate d-inline-block" style="max-width:180px;" title="${escapeHtml(getFilename(item))}">${escapeHtml(getFilename(item))}</small></td>
-                        <td>${item.actress || '-'}</td>
+                        <td>
+                            <strong style="color:var(--text-primary);">${item.movie_code || '-'}</strong>
+                            <br><small style="color:var(--text-muted);max-width:180px;" class="text-truncate d-inline-block" title="${escapeHtml(getFilename(item))}">${escapeHtml(getFilename(item))}</small>
+                        </td>
+                        <td>${item.actress || '<span style="color:var(--text-muted)">-</span>'}</td>
                         <td>${getStatusBadge(item.status)}</td>
                         <td>${getPipelineProgress(hasCode, hasMeta, hasPath, hasEmby)}</td>
-                        <td><small>${formatDate(item.created_at)}</small></td>
+                        <td><small style="color:var(--text-secondary)">${formatDate(item.created_at)}</small></td>
                         <td>
                             <div class="btn-group">
-                                <button class="btn btn-sm btn-outline-info action-btn" onclick="viewDetails(${item.id})" title="View Details">
+                                <button class="btn btn-sm action-btn btn-outline-secondary" onclick="viewDetails(${item.id})" title="View Details">
                                     <i class="bi bi-eye"></i>
                                 </button>
-                                ${hasEmby && embyPublicUrl ? `<a class="btn btn-sm btn-outline-success action-btn" href="${getEmbyItemUrl(item.emby_item_id)}" target="_blank" title="Open in Emby">
+                                ${hasEmby && embyPublicUrl ? `<a class="btn btn-sm action-btn btn-outline-secondary" href="${getEmbyItemUrl(item.emby_item_id)}" target="_blank" title="Open in Emby" style="color:var(--green);border-color:var(--green-dim);">
                                     <i class="bi bi-tv"></i>
                                 </a>` : ''}
                                 <div class="btn-group" role="group">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" data-bs-auto-close="true" title="Actions">
+                                    <button type="button" class="btn btn-sm action-btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" data-bs-auto-close="true" title="Actions">
                                         <i class="bi bi-three-dots-vertical"></i>
                                     </button>
                                     <ul class="dropdown-menu dropdown-menu-end">
                                         <li><h6 class="dropdown-header">Pipeline Steps</h6></li>
                                         <li><a class="dropdown-item" href="#" onclick="runAction(${item.id}, 'extract-code', event)">
-                                            <i class="bi bi-search"></i> Re-extract Code
+                                            <i class="bi bi-search me-2"></i>Re-extract Code
                                         </a></li>
                                         <li><a class="dropdown-item${fetchDisabled ? ' disabled' : ''}" href="#" ${fetchDisabled ? '' : `onclick="runAction(${item.id}, 'fetch-metadata', event)"`} title="${fetchDisabled ? 'Extract code first' : ''}">
-                                            <i class="bi bi-cloud-download"></i> Re-fetch Metadata
+                                            <i class="bi bi-cloud-download me-2"></i>Re-fetch Metadata
                                         </a></li>
                                         <li><a class="dropdown-item${renameDisabled ? ' disabled' : ''}" href="#" ${renameDisabled ? '' : `onclick="runAction(${item.id}, 'rename-file', event)"`} title="${renameDisabled ? 'Fetch metadata first' : ''}">
-                                            <i class="bi bi-file-earmark-arrow-up"></i> Re-rename & Move
+                                            <i class="bi bi-file-earmark-arrow-up me-2"></i>Re-rename & Move
                                         </a></li>
-                                        <li><a class="dropdown-item${embyDisabled ? ' disabled' : ''}" href="#" ${embyDisabled ? '' : `onclick="runAction(${item.id}, 'update-emby', event)"`} title="${embyDisabled ? 'Rename & move file first' : ''}">
-                                            <i class="bi bi-tv"></i> Re-update Emby
-                                        </a></li>
-                                        <li><hr class="dropdown-divider"></li>
-                                        <li><a class="dropdown-item text-warning" href="#" onclick="runAction(${item.id}, 'full-retry', event)">
-                                            <i class="bi bi-arrow-clockwise"></i> Full Retry
+                                        <li><a class="dropdown-item${embyDisabled ? ' disabled' : ''}" href="#" ${embyDisabled ? '' : `onclick="runAction(${item.id}, 'update-emby', event)"`} title="${embyDisabled ? 'Rename & move first' : ''}">
+                                            <i class="bi bi-tv me-2"></i>Re-update Emby
                                         </a></li>
                                         <li><hr class="dropdown-divider"></li>
-                                        <li><a class="dropdown-item text-danger" href="#" onclick="deleteItem(${item.id}, event)">
-                                            <i class="bi bi-trash"></i> Delete from Queue
+                                        <li><a class="dropdown-item" href="#" onclick="runAction(${item.id}, 'full-retry', event)" style="color:var(--yellow)">
+                                            <i class="bi bi-arrow-clockwise me-2"></i>Full Retry
+                                        </a></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><a class="dropdown-item" href="#" onclick="deleteItem(${item.id}, event)" style="color:var(--red)">
+                                            <i class="bi bi-trash me-2"></i>Delete
                                         </a></li>
                                     </ul>
                                 </div>
                             </div>
                         </td>
-                    </tr>
-                `}).join('');
+                    </tr>`;
+                }).join('');
             } catch (error) {
                 console.error('Failed to fetch queue:', error);
                 document.getElementById('queueTableBody').innerHTML =
-                    '<tr><td colspan="7" class="text-center text-danger">Error loading queue</td></tr>';
+                    '<tr><td colspan="7" class="text-center" style="color:var(--red);padding:2rem;">Error loading queue</td></tr>';
             }
         }
 
@@ -548,224 +842,174 @@
         async function viewDetails(itemId) {
             const modal = new bootstrap.Modal(document.getElementById('itemDetailModal'));
             const body = document.getElementById('itemDetailBody');
-
-            body.innerHTML = 'Loading...';
+            body.innerHTML = '<div class="text-center" style="color:var(--text-muted);padding:2rem;">Loading...</div>';
             modal.show();
 
             try {
                 const response = await fetch(`${API_BASE}/api/queue/${itemId}`);
                 const item = await response.json();
 
+                let metadata = item.metadata_json;
+                if (typeof metadata === 'string') { try { metadata = JSON.parse(metadata); } catch(e) { metadata = null; } }
+
+                const imageUrl = metadata ? (metadata.image_cropped || metadata.raw_image_url || '') : '';
+
+                const hasCode = !!item.movie_code;
+                const hasMeta = !!metadata;
+                const hasPath = !!item.new_path;
+                const hasEmby = !!item.emby_item_id;
+
                 body.innerHTML = `
-                    <dl class="row">
-                        <dt class="col-sm-3">ID</dt>
-                        <dd class="col-sm-9"><code>${item.id}</code></dd>
-
-                        <dt class="col-sm-3">Movie Code</dt>
-                        <dd class="col-sm-9"><strong>${item.movie_code || '-'}</strong></dd>
-
-                        <dt class="col-sm-3">Actress</dt>
-                        <dd class="col-sm-9">${item.actress || '-'}</dd>
-
-                        <dt class="col-sm-3">Subtitle</dt>
-                        <dd class="col-sm-9">${item.subtitle || '-'}</dd>
-
-                        <dt class="col-sm-3">Status</dt>
-                        <dd class="col-sm-9">${getStatusBadge(item.status)}</dd>
-
-                        <dt class="col-sm-3">Original Path</dt>
-                        <dd class="col-sm-9"><code class="small">${item.file_path}</code></dd>
-
-                        <dt class="col-sm-3">New Path</dt>
-                        <dd class="col-sm-9"><code class="small">${item.new_path || '-'}</code></dd>
-
-                        <dt class="col-sm-3">Emby Item ID</dt>
-                        <dd class="col-sm-9"><code>${item.emby_item_id || '-'}</code></dd>
-
-                        <dt class="col-sm-3">Retry Count</dt>
-                        <dd class="col-sm-9">${item.retry_count} / 4</dd>
-
-                        ${item.error_message ? `
-                            <dt class="col-sm-3">Error</dt>
-                            <dd class="col-sm-9"><span class="text-danger">${item.error_message}</span></dd>
-                        ` : ''}
-
-                        <dt class="col-sm-3">Created</dt>
-                        <dd class="col-sm-9">${formatDate(item.created_at)}</dd>
-
-                        <dt class="col-sm-3">Updated</dt>
-                        <dd class="col-sm-9">${formatDate(item.updated_at)}</dd>
-
-                        ${item.metadata_json ? `
-                            <dt class="col-sm-3">Metadata</dt>
-                            <dd class="col-sm-9">
-                                <pre class="bg-light p-2 rounded" style="max-height: 300px; overflow-y: auto; font-size: 0.75rem;">${JSON.stringify(item.metadata_json, null, 2)}</pre>
-                            </dd>
-                        ` : ''}
-                    </dl>
+                    <div class="d-flex gap-3 mb-3 align-items-start flex-wrap">
+                        ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" class="detail-image" alt="Cover" onerror="this.style.display='none'">` : ''}
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <h5 style="margin:0;font-family:var(--font-display);font-weight:600;">${item.movie_code || 'Unknown'}</h5>
+                                ${getStatusBadge(item.status)}
+                                ${hasEmby && embyPublicUrl ? `<a href="${getEmbyItemUrl(item.emby_item_id)}" target="_blank" class="btn btn-sm" style="color:var(--green);font-size:0.78rem;"><i class="bi bi-tv"></i> Open in Emby</a>` : ''}
+                            </div>
+                            <div class="mb-2">${getPipelineProgress(hasCode, hasMeta, hasPath, hasEmby)}</div>
+                            <dl class="row mb-0" style="font-size:0.82rem;">
+                                <dt class="col-sm-4">Actress</dt>
+                                <dd class="col-sm-8">${item.actress || '-'}</dd>
+                                <dt class="col-sm-4">Subtitle</dt>
+                                <dd class="col-sm-8">${item.subtitle || '-'}</dd>
+                                <dt class="col-sm-4">Original Path</dt>
+                                <dd class="col-sm-8"><code class="small">${escapeHtml(item.file_path || '-')}</code></dd>
+                                <dt class="col-sm-4">New Path</dt>
+                                <dd class="col-sm-8"><code class="small">${escapeHtml(item.new_path || '-')}</code></dd>
+                                <dt class="col-sm-4">Emby Item ID</dt>
+                                <dd class="col-sm-8"><code>${item.emby_item_id || '-'}</code></dd>
+                                <dt class="col-sm-4">Retry Count</dt>
+                                <dd class="col-sm-8">${item.retry_count} / 4</dd>
+                                ${item.error_message ? `
+                                    <dt class="col-sm-4">Error</dt>
+                                    <dd class="col-sm-8"><span style="color:var(--red)">${escapeHtml(item.error_message)}</span></dd>
+                                ` : ''}
+                                <dt class="col-sm-4">Created</dt>
+                                <dd class="col-sm-8">${formatDate(item.created_at)}</dd>
+                                <dt class="col-sm-4">Updated</dt>
+                                <dd class="col-sm-8">${formatDate(item.updated_at)}</dd>
+                            </dl>
+                        </div>
+                    </div>
+                    ${metadata ? `
+                        <details>
+                            <summary style="cursor:pointer;font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem;">
+                                <i class="bi bi-code-slash"></i> Raw Metadata
+                            </summary>
+                            <pre class="detail-meta-pre">${JSON.stringify(metadata, null, 2)}</pre>
+                        </details>
+                    ` : ''}
                 `;
             } catch (error) {
-                body.innerHTML = `<div class="alert alert-danger">Error loading item details: ${error.message}</div>`;
+                body.innerHTML = `<div style="color:var(--red);padding:1rem;">Error loading item details: ${escapeHtml(error.message)}</div>`;
             }
         }
 
-        // Retry failed item (deprecated - use runAction instead)
-        async function retryItem(itemId) {
-            return runAction(itemId, 'full-retry', null);
-        }
+        // Deprecated wrappers
+        async function retryItem(itemId) { return runAction(itemId, 'full-retry', null); }
+        async function reprocessMetadata(itemId) { return runAction(itemId, 'update-emby', null); }
 
-        // Reprocess metadata (deprecated - use runAction instead)
-        async function reprocessMetadata(itemId) {
-            return runAction(itemId, 'update-emby', null);
-        }
-
-        // Bulk refresh metadata for all completed items
+        // Bulk refresh metadata
         async function bulkRefreshMetadata() {
             const forceFresh = getForceFresh();
-            const freshText = forceFresh ? '\n• FORCE FRESH enabled - bypassing cache' : '';
-
+            const freshText = forceFresh ? '\n\u2022 FORCE FRESH enabled - bypassing cache' : '';
             const updateEmby = confirm(
-                'Refresh metadata for all completed items using NEW unified search?\n\n' +
-                'This will:\n' +
-                '• Re-fetch metadata from WordPress (unified /emby/v1/search)\n' +
-                '• NOT move files - only update metadata\n' +
-                '• Update Emby with new metadata (if you click OK)' +
-                freshText + '\n\n' +
-                'Click OK to update Emby, Cancel to skip Emby update'
+                'Refresh metadata for all completed items?\n\n' +
+                'This will:\n\u2022 Re-fetch metadata from WordPress\n\u2022 NOT move files\n' +
+                '\u2022 Update Emby with new metadata (if you click OK)' + freshText +
+                '\n\nClick OK to update Emby, Cancel to skip Emby update'
             );
-
-            if (updateEmby === null) return; // User cancelled the first dialog
-
+            if (updateEmby === null) return;
             const confirmText = updateEmby
                 ? 'Refresh metadata AND update Emby for all completed items?'
                 : 'Refresh metadata (skip Emby update) for all completed items?';
+            if (!confirm(confirmText)) { showToast('Bulk refresh cancelled', 'info'); return; }
 
-            if (!confirm(confirmText)) {
-                showToast('Bulk refresh cancelled', 'info');
-                return;
-            }
-
-            const freshMsg = forceFresh ? ' (FORCE FRESH)' : '';
-            showToast(`Starting bulk metadata refresh${freshMsg}... (check logs)`, 'info');
-
+            showToast(`Starting bulk metadata refresh${forceFresh ? ' (FORCE FRESH)' : ''}...`, 'info');
             try {
                 const response = await fetch(
                     `${API_BASE}/api/bulk/refresh-metadata?status=completed&update_emby=${updateEmby}&fresh=${forceFresh}`,
                     { method: 'POST' }
                 );
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Bulk refresh failed');
-                }
-
+                if (!response.ok) { const error = await response.json(); throw new Error(error.detail || 'Bulk refresh failed'); }
                 const result = await response.json();
-
                 if (result.failed > 0) {
-                    showToast(
-                        `Refreshed ${result.updated}/${result.total} items (${result.failed} failed - check logs)`,
-                        'warning'
-                    );
+                    showToast(`Refreshed ${result.updated}/${result.total} items (${result.failed} failed)`, 'warning');
                 } else {
-                    showToast(
-                        `Successfully refreshed ${result.updated}/${result.total} items`,
-                        'success'
-                    );
+                    showToast(`Refreshed ${result.updated}/${result.total} items`, 'success');
                 }
-
                 setTimeout(() => refreshData(), 1000);
-            } catch (error) {
-                showToast(`Error: ${error.message}`, 'error');
-            }
+            } catch (error) { showToast(`Error: ${error.message}`, 'error'); }
         }
 
-        // Generate video preview (Emby scheduled task)
+        // Generate preview
         async function generatePreview() {
             showToast('Triggering video preview generation...', 'info');
             try {
                 const response = await fetch(`${API_BASE}/api/generate-preview`, { method: 'POST' });
                 const result = await response.json();
-                if (response.ok && result.success) {
-                    showToast('Video preview task started', 'success');
-                } else {
-                    showToast(result.detail || 'Failed to trigger preview', 'error');
-                }
-            } catch (error) {
-                showToast(`Error: ${error.message}`, 'error');
-            }
+                if (response.ok && result.success) showToast('Video preview task started', 'success');
+                else showToast(result.detail || 'Failed to trigger preview', 'error');
+            } catch (error) { showToast(`Error: ${error.message}`, 'error'); }
         }
 
-        // Cleanup old items
+        // Cleanup
         async function triggerCleanup() {
             const days = prompt('Delete completed items older than how many days?', '30');
-            if (!days || isNaN(days)) {
-                showToast('Cleanup cancelled', 'info');
-                return;
-            }
-
-            if (!confirm(`Delete all completed items older than ${days} days?`)) {
-                showToast('Cleanup cancelled', 'info');
-                return;
-            }
-
+            if (!days || isNaN(days)) { showToast('Cleanup cancelled', 'info'); return; }
+            if (!confirm(`Delete all completed items older than ${days} days?`)) { showToast('Cleanup cancelled', 'info'); return; }
             showToast('Deleting old items...', 'info');
-
             try {
-                const response = await fetch(`${API_BASE}/api/cleanup?older_than_days=${days}`, {
-                    method: 'POST'
-                });
-
-                if (!response.ok) {
-                    throw new Error('Cleanup failed');
-                }
-
+                const response = await fetch(`${API_BASE}/api/cleanup?older_than_days=${days}`, { method: 'POST' });
+                if (!response.ok) throw new Error('Cleanup failed');
                 const result = await response.json();
                 showToast(`Deleted ${result.deleted_count} items`, 'success');
                 setTimeout(() => refreshData(), 500);
-            } catch (error) {
-                showToast(`Error: ${error.message}`, 'error');
-            }
+            } catch (error) { showToast(`Error: ${error.message}`, 'error'); }
         }
 
-        // Toggle logs section
+        // Toggle logs
         function toggleLogs() {
             const section = document.getElementById('logsSection');
             const btn = document.getElementById('toggleLogsBtn');
             if (section.style.display === 'none') {
                 section.style.display = 'block';
-                btn.innerHTML = '<i class="bi bi-terminal"></i> Hide Logs';
+                btn.title = 'Hide logs';
                 refreshLogs();
-                startLogsAutoRefresh(); // Auto-refresh logs every 2 seconds
+                startLogsAutoRefresh();
             } else {
                 section.style.display = 'none';
-                btn.innerHTML = '<i class="bi bi-terminal"></i> Show Logs';
-                stopLogsAutoRefresh(); // Stop refreshing when hidden
+                btn.title = 'Show logs';
+                stopLogsAutoRefresh();
             }
         }
 
-        // Refresh logs
+        // Refresh logs with syntax coloring
         async function refreshLogs() {
             try {
                 const response = await fetch(`${API_BASE}/api/logs?lines=200`);
                 const data = await response.json();
-
                 const viewer = document.getElementById('logViewer');
                 const wasAtBottom = viewer.scrollHeight - viewer.scrollTop <= viewer.clientHeight + 50;
 
                 if (data.lines && data.lines.length > 0) {
-                    viewer.innerHTML = data.lines.map(line =>
-                        `<div>${escapeHtml(line)}</div>`
-                    ).join('');
+                    viewer.innerHTML = data.lines.map(line => {
+                        const escaped = escapeHtml(line);
+                        let cls = '';
+                        if (line.includes(' INFO ')) cls = 'log-info';
+                        else if (line.includes(' WARNING ') || line.includes(' WARN ')) cls = 'log-warning';
+                        else if (line.includes(' ERROR ')) cls = 'log-error';
+                        else if (line.includes(' DEBUG ')) cls = 'log-debug';
+                        return `<div class="log-line ${cls}">${escaped}</div>`;
+                    }).join('');
                 } else {
-                    viewer.innerHTML = '<div class="text-muted">No logs yet. Logs will appear here as actions are performed.</div>';
+                    viewer.innerHTML = '<div style="color:var(--text-muted)">No logs yet.</div>';
                 }
-
-                // Auto-scroll to bottom if was already at bottom or if first load
-                if (wasAtBottom || viewer.scrollTop === 0) {
-                    viewer.scrollTop = viewer.scrollHeight;
-                }
+                if (wasAtBottom || viewer.scrollTop === 0) viewer.scrollTop = viewer.scrollHeight;
             } catch (error) {
-                document.getElementById('logViewer').innerHTML = `<div class="text-danger">Error loading logs: ${error.message}</div>`;
+                document.getElementById('logViewer').innerHTML = `<div style="color:var(--red)">Error loading logs: ${escapeHtml(error.message)}</div>`;
             }
         }
 
@@ -773,167 +1017,85 @@
         function showToast(message, type = 'info') {
             const toastContainer = document.getElementById('toastContainer');
             const toastId = `toast-${Date.now()}`;
+            const colors = { success: '#166534', error: '#991b1b', warning: '#854d0e', info: '#1e40af' };
+            const icons = { success: 'bi-check-circle', error: 'bi-x-circle', warning: 'bi-exclamation-triangle', info: 'bi-info-circle' };
+            const bg = colors[type] || colors.info;
+            const icon = icons[type] || icons.info;
 
-            const bgColors = {
-                'success': 'bg-success',
-                'error': 'bg-danger',
-                'warning': 'bg-warning',
-                'info': 'bg-info'
-            };
-
-            const icons = {
-                'success': 'bi-check-circle',
-                'error': 'bi-x-circle',
-                'warning': 'bi-exclamation-triangle',
-                'info': 'bi-info-circle'
-            };
-
-            const toastHTML = `
-                <div id="${toastId}" class="toast align-items-center text-white ${bgColors[type] || 'bg-info'} border-0" role="alert">
+            toastContainer.insertAdjacentHTML('beforeend', `
+                <div id="${toastId}" class="toast align-items-center text-white border-0" role="alert" style="background:${bg};">
                     <div class="d-flex">
-                        <div class="toast-body">
-                            <i class="bi ${icons[type] || 'bi-info-circle'} me-2"></i>
-                            ${escapeHtml(message)}
-                        </div>
+                        <div class="toast-body"><i class="bi ${icon} me-2"></i>${escapeHtml(message)}</div>
                         <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
                     </div>
                 </div>
-            `;
-
-            toastContainer.insertAdjacentHTML('beforeend', toastHTML);
-            const toastElement = document.getElementById(toastId);
-
-            const toast = new bootstrap.Toast(toastElement, { autohide: true, delay: 4000 });
+            `);
+            const el = document.getElementById(toastId);
+            const toast = new bootstrap.Toast(el, { autohide: true, delay: 4000 });
             toast.show();
-
-            // Remove from DOM after hidden
-            toastElement.addEventListener('hidden.bs.toast', () => {
-                toastElement.remove();
-            });
+            el.addEventListener('hidden.bs.toast', () => el.remove());
         }
 
-        // Delete item from queue
+        // Delete item
         async function deleteItem(itemId, event) {
             if (event) event.preventDefault();
-
-            if (!confirm(`Delete item ${itemId} from queue?\n\nThis will remove it from the processing queue.\nThe actual file will NOT be deleted.`)) {
-                showToast('Delete cancelled', 'info');
-                return;
+            if (!confirm(`Delete item ${itemId} from queue?\n\nThis removes it from the processing queue.\nThe actual file will NOT be deleted.`)) {
+                showToast('Delete cancelled', 'info'); return;
             }
-
             showToast('Deleting item...', 'info');
-
             try {
-                const response = await fetch(`${API_BASE}/api/queue/${itemId}`, {
-                    method: 'DELETE'
-                });
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Delete failed');
-                }
-
+                const response = await fetch(`${API_BASE}/api/queue/${itemId}`, { method: 'DELETE' });
+                if (!response.ok) { const error = await response.json(); throw new Error(error.detail || 'Delete failed'); }
                 const result = await response.json();
-
-                if (result.success) {
-                    showToast(result.message || 'Item deleted successfully', 'success');
-                    // Force refresh to remove deleted item from table
-                    setTimeout(() => refreshData(), 500);
-                } else {
-                    showToast(result.message || 'Delete failed', 'error');
-                }
-            } catch (error) {
-                showToast(`Error: ${error.message}`, 'error');
-            }
+                if (result.success) { showToast(result.message || 'Item deleted', 'success'); setTimeout(() => refreshData(), 500); }
+                else showToast(result.message || 'Delete failed', 'error');
+            } catch (error) { showToast(`Error: ${error.message}`, 'error'); }
         }
 
-        // Run granular action with loading state
+        // Run granular action
         async function runAction(itemId, action, event) {
             if (event) event.preventDefault();
-
-            const actionNames = {
-                'extract-code': 'Re-extracting code',
-                'fetch-metadata': 'Re-fetching metadata',
-                'rename-file': 'Re-renaming & moving file',
-                'update-emby': 'Re-updating Emby',
-                'full-retry': 'Resetting for full retry'
-            };
-
-            const loadingMsg = actionNames[action] || 'Processing';
+            const names = { 'extract-code': 'Re-extracting code', 'fetch-metadata': 'Re-fetching metadata', 'rename-file': 'Re-renaming & moving', 'update-emby': 'Re-updating Emby', 'full-retry': 'Resetting for full retry' };
+            const msg = names[action] || 'Processing';
             const forceFresh = getForceFresh();
-
-            if (forceFresh && (action === 'fetch-metadata' || action === 'update-emby')) {
-                showToast(`${loadingMsg} (FORCE FRESH - bypassing cache)...`, 'info');
-            } else {
-                showToast(`${loadingMsg}...`, 'info');
-            }
+            const isFreshable = action === 'fetch-metadata' || action === 'update-emby';
+            showToast(`${msg}${forceFresh && isFreshable ? ' (FRESH)' : ''}...`, 'info');
 
             try {
-                // Add fresh parameter for metadata actions if force fresh is enabled
                 const url = new URL(`${API_BASE}/api/queue/${itemId}/actions/${action}`, window.location.origin);
-                if (forceFresh && (action === 'fetch-metadata' || action === 'update-emby')) {
-                    url.searchParams.append('fresh', 'true');
-                }
-
-                const response = await fetch(url, {
-                    method: 'POST'
-                });
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Action failed');
-                }
-
+                if (forceFresh && isFreshable) url.searchParams.append('fresh', 'true');
+                const response = await fetch(url, { method: 'POST' });
+                if (!response.ok) { const error = await response.json(); throw new Error(error.detail || 'Action failed'); }
                 const result = await response.json();
-
-                if (result.success) {
-                    showToast(result.message || 'Action completed successfully', 'success');
-                } else {
-                    showToast(result.message || 'Action failed', 'error');
-                }
-            } catch (error) {
-                showToast(`Error: ${error.message}`, 'error');
-            }
+                showToast(result.message || (result.success ? 'Done' : 'Failed'), result.success ? 'success' : 'error');
+            } catch (error) { showToast(`Error: ${error.message}`, 'error'); }
         }
 
-        // === Download Form ===
+        // Download Form
         async function submitDownload(event) {
             event.preventDefault();
             const urlInput = document.getElementById('downloadUrl');
             const filenameInput = document.getElementById('downloadFilename');
             const btn = document.getElementById('downloadBtn');
-
             const url = urlInput.value.trim();
             if (!url) return;
 
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Starting...';
-
             try {
                 const params = new URLSearchParams({ url });
-                if (filenameInput.value.trim()) {
-                    params.append('filename', filenameInput.value.trim());
-                }
-
+                if (filenameInput.value.trim()) params.append('filename', filenameInput.value.trim());
                 const response = await fetch(`${API_BASE}/api/download?${params}`, { method: 'POST' });
-                if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.detail || 'Download failed');
-                }
-
+                if (!response.ok) { const err = await response.json(); throw new Error(err.detail || 'Download failed'); }
                 const result = await response.json();
                 showToast(result.message || 'Download started', 'success');
-                urlInput.value = '';
-                filenameInput.value = '';
+                urlInput.value = ''; filenameInput.value = '';
                 refreshDownloads();
-            } catch (error) {
-                showToast(`Error: ${error.message}`, 'error');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="bi bi-download"></i> Download';
-            }
+            } catch (error) { showToast(`Error: ${error.message}`, 'error'); }
+            finally { btn.disabled = false; btn.innerHTML = '<i class="bi bi-download"></i> Download'; }
         }
 
+        // Refresh downloads
         async function refreshDownloads() {
             try {
                 const dlStatus = document.getElementById('dlFilterStatus').value;
@@ -944,73 +1106,56 @@
 
                 const response = await fetch(`${API_BASE}/api/downloads?${params}`);
                 const data = await response.json();
-
                 const wrapper = document.getElementById('recentDownloads');
                 const container = document.getElementById('downloadsListContainer');
-
                 const total = data.total || data.count || 0;
                 dlTotalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
                 if (dlCurrentPage > dlTotalPages) dlCurrentPage = dlTotalPages;
-
                 renderPagination('dlPagination', 'dlPageInfo', dlCurrentPage, dlTotalPages, total, 'goToDlPage');
 
                 const jobs = data.jobs || [];
-                if (jobs.length === 0) {
-                    wrapper.style.display = 'none';
-                    return;
-                }
+                if (jobs.length === 0) { wrapper.style.display = 'none'; return; }
 
                 wrapper.style.display = 'block';
                 container.innerHTML = jobs.map(job => {
                     const lastLine = job.output_tail && job.output_tail.length > 0
-                        ? escapeHtml(job.output_tail[job.output_tail.length - 1])
-                        : '';
-                    const borderClass = {
-                        'queued': 'border-secondary',
-                        'downloading': 'border-primary',
-                        'completed': 'border-success',
-                        'failed': 'border-danger',
-                    }[job.status] || 'border-secondary';
+                        ? escapeHtml(job.output_tail[job.output_tail.length - 1]) : '';
+                    const statusCls = `dl-${job.status}`;
 
                     let progressHtml = '';
                     if (job.status === 'downloading' && lastLine) {
-                        progressHtml = `<div class="mt-1 font-monospace text-primary" style="font-size:0.75rem;">${lastLine}</div>`;
+                        progressHtml = `<div class="mt-1" style="font-family:var(--font-mono);font-size:0.72rem;color:var(--blue);">${lastLine}</div>`;
                     } else if (job.status === 'failed') {
-                        progressHtml = `<div class="mt-1 text-danger" style="font-size:0.75rem;">${escapeHtml(job.error || 'Unknown error')}</div>`;
+                        progressHtml = `<div class="mt-1" style="font-size:0.72rem;color:var(--red);">${escapeHtml(job.error || 'Unknown error')}</div>`;
                     }
-
                     const hasOutput = job.output_tail && job.output_tail.length > 0;
                     const outputId = `dl-output-${job.id}`;
 
                     return `
-                        <div class="card mb-2 ${borderClass}" style="font-size: 0.8rem;">
-                            <div class="card-body py-2 px-3">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div class="flex-grow-1 me-2" style="min-width:0;">
-                                        <span class="text-truncate d-block" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</span>
-                                        ${job.filename ? `<small class="text-muted">Filename: ${escapeHtml(job.filename)}</small>` : ''}
-                                    </div>
-                                    <div class="text-end text-nowrap ms-2">
-                                        ${getDownloadStatusBadge(job.status)}
-                                        <br><small class="text-muted">${job.started_at ? formatDate(job.started_at) : 'queued'}</small>
-                                    </div>
+                        <div class="dl-card ${statusCls}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div class="flex-grow-1 me-2" style="min-width:0;">
+                                    <span class="text-truncate d-block" style="color:var(--text-primary);" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</span>
+                                    ${job.filename ? `<small style="color:var(--text-muted);">Filename: ${escapeHtml(job.filename)}</small>` : ''}
                                 </div>
-                                ${progressHtml}
-                                ${hasOutput ? `
-                                    <div class="mt-1">
-                                        <a href="#" class="small text-decoration-none" onclick="toggleDownloadOutput('${outputId}', event)">
-                                            <i class="bi bi-terminal"></i> Show output
-                                        </a>
-                                        <pre id="${outputId}" class="bg-dark text-light p-2 rounded mt-1 mb-0" style="display:none; font-size:0.7rem; max-height:200px; overflow-y:auto; white-space:pre-wrap;">${job.output_tail.map(l => escapeHtml(l)).join('\n')}</pre>
-                                    </div>
-                                ` : ''}
+                                <div class="text-end text-nowrap ms-2">
+                                    ${getDownloadStatusBadge(job.status)}
+                                    <br><small style="color:var(--text-muted);">${job.started_at ? formatDate(job.started_at) : 'queued'}</small>
+                                </div>
                             </div>
+                            ${progressHtml}
+                            ${hasOutput ? `
+                                <div class="mt-1">
+                                    <a href="#" style="font-size:0.75rem;color:var(--text-muted);text-decoration:none;" onclick="toggleDownloadOutput('${outputId}', event)">
+                                        <i class="bi bi-terminal"></i> Show output
+                                    </a>
+                                    <pre id="${outputId}" class="dl-output" style="display:none;">${job.output_tail.map(l => escapeHtml(l)).join('\n')}</pre>
+                                </div>
+                            ` : ''}
                         </div>
                     `;
                 }).join('');
-            } catch (error) {
-                console.error('Failed to fetch downloads:', error);
-            }
+            } catch (error) { console.error('Failed to fetch downloads:', error); }
         }
 
         function toggleDownloadOutput(id, event) {
@@ -1025,21 +1170,20 @@
 
         function getDownloadStatusBadge(status) {
             const map = {
-                'queued': '<span class="badge bg-secondary">queued</span>',
-                'downloading': '<span class="badge bg-primary"><span class="spinner-border spinner-border-sm" style="width:0.6rem;height:0.6rem;"></span> downloading</span>',
-                'completed': '<span class="badge bg-success">completed</span>',
-                'failed': '<span class="badge bg-danger">failed</span>',
+                'queued': '<span class="badge badge-secondary">queued</span>',
+                'downloading': '<span class="badge badge-info"><span class="spinner-border spinner-border-sm" style="width:0.5rem;height:0.5rem;"></span> downloading</span>',
+                'completed': '<span class="badge badge-success">completed</span>',
+                'failed': '<span class="badge badge-error">failed</span>',
             };
-            return map[status] || `<span class="badge bg-secondary">${status}</span>`;
+            return map[status] || `<span class="badge badge-secondary">${status}</span>`;
         }
 
-        // Extract filename from path (prefer new_path, fallback to file_path)
         function getFilename(item) {
             const path = item.new_path || item.file_path || '';
             return path.split('/').pop() || '-';
         }
 
-        // Pipeline progress indicator
+        // Pipeline progress
         function getPipelineProgress(hasCode, hasMeta, hasPath, hasEmby) {
             const steps = [
                 { done: hasCode, icon: 'bi-search', label: 'Extract' },
@@ -1047,17 +1191,13 @@
                 { done: hasPath, icon: 'bi-file-earmark-arrow-up', label: 'Move' },
                 { done: hasEmby, icon: 'bi-tv', label: 'Emby' },
             ];
-
-            // Find first incomplete step
             let currentIdx = steps.findIndex(s => !s.done);
-            if (currentIdx === -1) currentIdx = steps.length; // all done
+            if (currentIdx === -1) currentIdx = steps.length;
 
             let html = '<div class="pipeline-progress">';
             steps.forEach((step, i) => {
                 const cls = step.done ? 'done' : (i === currentIdx ? 'current' : '');
-                if (i > 0) {
-                    html += `<div class="pipeline-connector${steps[i-1].done ? ' done' : ''}"></div>`;
-                }
+                if (i > 0) html += `<div class="pipeline-connector${steps[i-1].done ? ' done' : ''}"></div>`;
                 html += `<div class="pipeline-step ${cls}">`;
                 html += `<div class="step-icon"><i class="bi ${step.done ? 'bi-check' : step.icon}"></i></div>`;
                 html += `<div class="step-label">${step.label}</div>`;
@@ -1067,17 +1207,17 @@
             return html;
         }
 
-        // Helper functions
+        // Status badge
         function getStatusBadge(status) {
-            const badges = {
-                'pending': 'warning',
-                'processing': 'info',
-                'moved': 'secondary',
-                'emby_pending': 'secondary',
-                'completed': 'success',
-                'error': 'danger'
+            const map = {
+                'pending': 'badge-warning',
+                'processing': 'badge-processing',
+                'moved': 'badge-secondary',
+                'emby_pending': 'badge-secondary',
+                'completed': 'badge-success',
+                'error': 'badge-error'
             };
-            return `<span class="badge bg-${badges[status] || 'secondary'} status-badge">${status}</span>`;
+            return `<span class="badge ${map[status] || 'badge-secondary'}">${status}</span>`;
         }
 
         function formatDate(dateStr) {
@@ -1092,28 +1232,17 @@
             return div.innerHTML;
         }
 
-        function showRefreshIndicator() {
-            document.getElementById('refreshIndicator').classList.add('active');
-        }
-
-        function hideRefreshIndicator() {
-            document.getElementById('refreshIndicator').classList.remove('active');
-        }
-
+        function showRefreshIndicator() { document.getElementById('refreshIndicator').classList.add('active'); }
+        function hideRefreshIndicator() { document.getElementById('refreshIndicator').classList.remove('active'); }
         function updateLastUpdateTime() {
-            document.getElementById('lastUpdate').textContent =
-                `Last updated: ${new Date().toLocaleTimeString()}`;
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
         }
 
         function debounce(func, wait) {
             let timeout;
-            return function executedFunction(...args) {
-                const later = () => {
-                    clearTimeout(timeout);
-                    func(...args);
-                };
+            return function(...args) {
                 clearTimeout(timeout);
-                timeout = setTimeout(later, wait);
+                timeout = setTimeout(() => func(...args), wait);
             };
         }
     </script>
