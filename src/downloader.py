@@ -54,6 +54,7 @@ class DownloadManager:
         self._queue_db = queue_db
         # In-memory buffer: only for active downloads (real-time output between DB flushes)
         self._active_output: dict[int, list[str]] = {}
+        self._active_procs: dict[int, subprocess.Popen] = {}
         self._lock = threading.Lock()
         self._container_name = os.getenv("YTDLP_CONTAINER_NAME", "ytdlp")
 
@@ -99,6 +100,32 @@ class DownloadManager:
                 results.append(result)
         return results, total
 
+    def cancel(self, job_id: int) -> bool:
+        """Cancel an active download. Returns True if cancelled, False if not active."""
+        with self._lock:
+            proc = self._active_procs.get(job_id)
+        if proc is None:
+            # Not actively running — just mark as failed in DB
+            row = self._queue_db.get_download(job_id)
+            if row and row['status'] in ('queued', 'downloading'):
+                self._queue_db.update_download_status(
+                    job_id,
+                    status='failed',
+                    error='Cancelled by user',
+                    finished_at=datetime.now(timezone.utc),
+                )
+                logger.info(f"[Download] Job {job_id} marked as cancelled (no active process)")
+                return True
+            return False
+        # Kill the subprocess
+        try:
+            proc.kill()
+            logger.info(f"[Download] Job {job_id} process killed by user")
+        except OSError:
+            pass
+        # The _run_download thread will handle cleanup and mark as failed
+        return True
+
     def _run_download(self, job_id: int, url: str, filename: Optional[str]):
         """Run the download in a background thread."""
         now = datetime.now(timezone.utc)
@@ -119,6 +146,8 @@ class DownloadManager:
                 stderr=subprocess.STDOUT,
                 text=True,
             )
+            with self._lock:
+                self._active_procs[job_id] = proc
 
             output_lines = []
             last_flush = time.monotonic()
@@ -149,7 +178,17 @@ class DownloadManager:
             # video downloaded fine. Treat as success if output has "OK:".
             output_has_ok = any(l.strip().startswith("OK:") for l in output_lines)
 
-            if proc.returncode == 0 or output_has_ok:
+            if proc.returncode == -9 or proc.returncode == -15:
+                # Killed by signal (SIGKILL=-9, SIGTERM=-15) — user cancelled
+                logger.info(f"[Download] Job {job_id} was cancelled by user")
+                self._queue_db.update_download_status(
+                    job_id,
+                    status='failed',
+                    error='Cancelled by user',
+                    output_tail=output_lines[-50:],
+                    finished_at=datetime.now(timezone.utc),
+                )
+            elif proc.returncode == 0 or output_has_ok:
                 if proc.returncode != 0:
                     logger.info(f"[Download] Job {job_id} exit code {proc.returncode} but output contains OK — treating as success")
                 else:
@@ -189,9 +228,10 @@ class DownloadManager:
                 finished_at=datetime.now(timezone.utc),
             )
         finally:
-            # Remove from active buffer
+            # Remove from active buffers
             with self._lock:
                 self._active_output.pop(job_id, None)
+                self._active_procs.pop(job_id, None)
 
 
 # Singleton instance

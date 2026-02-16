@@ -1238,6 +1238,19 @@ async def get_download(job_id: int):
     return {"job": job}
 
 
+@app.post("/api/downloads/{job_id}/cancel")
+async def cancel_download(job_id: int):
+    """Cancel an active or queued download job."""
+    from .downloader import get_download_manager
+
+    manager = get_download_manager()
+    cancelled = manager.cancel(job_id)
+    if not cancelled:
+        raise HTTPException(status_code=404, detail="Download not found or not cancellable")
+    logger.info(f"[API] Download cancelled: job={job_id}")
+    return {"success": True, "message": f"Download job {job_id} cancelled"}
+
+
 @app.get("/api/logs")
 async def get_logs(lines: int = Query(100, ge=1, le=1000)):
     """Get recent log lines from in-memory buffer."""

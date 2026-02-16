@@ -1261,6 +1261,16 @@
             finally { btn.disabled = false; btn.innerHTML = '<i class="bi bi-download"></i> Download'; }
         }
 
+        async function cancelDownload(jobId, event) {
+            if (event) event.stopPropagation();
+            try {
+                const response = await fetch(`${API_BASE}/api/downloads/${jobId}/cancel`, { method: 'POST' });
+                if (!response.ok) { const err = await response.json(); throw new Error(err.detail || 'Cancel failed'); }
+                showToast('Download cancelled', 'success');
+                refreshDownloads();
+            } catch (error) { showToast(`Error: ${error.message}`, 'error'); }
+        }
+
         // Refresh downloads
         async function refreshDownloads() {
             try {
@@ -1304,9 +1314,12 @@
                                     <span class="text-truncate d-block" style="color:var(--text-primary);" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</span>
                                     ${job.filename ? `<small style="color:var(--text-muted);">Filename: ${escapeHtml(job.filename)}</small>` : ''}
                                 </div>
-                                <div class="text-end text-nowrap ms-2">
-                                    ${getDownloadStatusBadge(job.status)}
-                                    <br><small style="color:var(--text-muted);">${job.started_at ? formatDate(job.started_at) : 'queued'}</small>
+                                <div class="text-end text-nowrap ms-2 d-flex align-items-center gap-2">
+                                    ${(job.status === 'downloading' || job.status === 'queued') ? `<button class="btn btn-sm" style="padding:2px 8px;font-size:0.7rem;border:1px solid var(--red);color:var(--red);background:transparent;" onclick="cancelDownload(${job.id}, event)" title="Cancel download"><i class="bi bi-x-lg"></i> Cancel</button>` : ''}
+                                    <div>
+                                        ${getDownloadStatusBadge(job.status)}
+                                        <br><small style="color:var(--text-muted);">${job.started_at ? formatDate(job.started_at) : 'queued'}</small>
+                                    </div>
                                 </div>
                             </div>
                             ${progressHtml}
