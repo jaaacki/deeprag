@@ -125,6 +125,28 @@ class DownloadManager:
         updated = self._queue_db.get_download(job_id)
         return _row_to_dict(updated) if updated else None
 
+    def delete(self, job_id: int) -> bool:
+        """Delete a download job. Cancels it first if active."""
+        # Cancel if still running
+        with self._lock:
+            proc = self._active_procs.get(job_id)
+        if proc:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+            # Wait a moment for the thread to clean up
+            import time as _time
+            _time.sleep(0.5)
+        # Delete from DB
+        deleted = self._queue_db.delete_download(job_id)
+        if deleted:
+            with self._lock:
+                self._active_output.pop(job_id, None)
+                self._active_procs.pop(job_id, None)
+            logger.info(f"[Download] Job {job_id} deleted")
+        return deleted
+
     def cancel(self, job_id: int) -> bool:
         """Cancel an active download. Returns True if cancelled, False if not active."""
         with self._lock:

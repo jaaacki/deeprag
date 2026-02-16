@@ -549,6 +549,21 @@ class QueueDB:
         finally:
             self._put_conn(conn)
 
+    def delete_download(self, download_id: int) -> bool:
+        """Delete a single download job by ID. Returns True if deleted."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM download_jobs WHERE id = %s", (download_id,))
+                deleted = cur.rowcount > 0
+            conn.commit()
+            return deleted
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._put_conn(conn)
+
     def recover_stale_downloads(self) -> int:
         """Mark any 'downloading' jobs as 'failed' (stale from container restart).
         Returns count of recovered jobs."""

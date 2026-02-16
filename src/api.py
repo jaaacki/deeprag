@@ -1251,6 +1251,19 @@ async def retry_download(job_id: int):
     return {"success": True, "message": f"Download retrying (job {job_id})", "job": job}
 
 
+@app.delete("/api/downloads/{job_id}")
+async def delete_download(job_id: int):
+    """Delete a download job."""
+    from .downloader import get_download_manager
+
+    manager = get_download_manager()
+    deleted = manager.delete(job_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Download job not found")
+    logger.info(f"[API] Download deleted: job={job_id}")
+    return {"success": True, "message": f"Download job {job_id} deleted"}
+
+
 @app.post("/api/downloads/{job_id}/cancel")
 async def cancel_download(job_id: int):
     """Cancel an active or queued download job."""
