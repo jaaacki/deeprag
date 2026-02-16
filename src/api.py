@@ -897,6 +897,16 @@ async def action_update_emby(
                         except Exception as e:
                             logger.warning(f"[API Action] Image upload failed for item {emby_item_id}: {e}")
 
+                    # Mark as completed
+                    cur.execute("""
+                        UPDATE processing_queue
+                        SET status = 'completed', actress = %s,
+                            error_message = NULL, updated_at = NOW()
+                        WHERE id = %s
+                    """, (actress, item_id))
+                    conn.commit()
+                    logger.info(f"[API Action] Item {item_id} marked as completed")
+
                     return {
                         "success": True,
                         "message": f"Updated Emby: {actress} - {title[:40]}",
