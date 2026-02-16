@@ -674,12 +674,12 @@ async def action_update_emby(
                     detail="No movie code - run extract-code first"
                 )
 
-            # If item doesn't have emby_item_id and hasn't been moved, use old behavior
+            # If item doesn't have emby_item_id, reset to moved for EmbyUpdater
             if not emby_item_id:
-                if status != 'completed':
+                if not new_path:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Item must be completed to update Emby (current: {status})"
+                        detail="File not moved yet - run rename-file first"
                     )
                 # Reset to moved state to trigger EmbyUpdater reprocessing
                 cur.execute("""
