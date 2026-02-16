@@ -170,6 +170,16 @@
             display: flex; align-items: center; justify-content: space-between;
             padding: 0.65rem 1.15rem; border-bottom: 1px solid var(--border-subtle);
         }
+        .section-header.collapsible { cursor: pointer; user-select: none; }
+        .section-header.collapsible:hover { background: var(--bg-surface-hover); }
+        .section-chevron {
+            transition: transform 0.2s ease; color: var(--text-muted); font-size: 0.85rem;
+        }
+        .section-chevron.collapsed { transform: rotate(-90deg); }
+        .section-collapsible { transition: none; }
+        .section-collapsible.hidden { display: none; }
+        .section-card.collapsed-card { border-bottom: none; }
+        .section-card.collapsed-card .section-header { border-bottom: none; }
         .section-header h3 {
             font-family: var(--font-display); font-size: 0.9rem; font-weight: 600;
             margin: 0; display: flex; align-items: center; gap: 0.5rem; color: var(--text-primary);
@@ -483,11 +493,11 @@
         </div>
 
         <!-- Downloads Section -->
-        <div class="section-card">
-            <div class="section-header">
+        <div class="section-card" id="downloadsCard">
+            <div class="section-header collapsible" onclick="toggleSection('downloads')">
                 <h3><i class="bi bi-download"></i> Downloads</h3>
                 <div class="d-flex align-items-center gap-2">
-                    <select class="form-select form-select-sm" id="dlFilterStatus" style="width:130px;" onchange="dlCurrentPage=1; refreshDownloads()">
+                    <select class="form-select form-select-sm" id="dlFilterStatus" style="width:130px;" onclick="event.stopPropagation();" onchange="dlCurrentPage=1; refreshDownloads()">
                         <option value="">All</option>
                         <option value="queued">Queued</option>
                         <option value="downloading">Downloading</option>
@@ -495,79 +505,85 @@
                         <option value="failed">Failed</option>
                     </select>
                     <span class="page-info" id="dlPageInfo"></span>
-                    <div class="pagination-group" id="dlPagination"></div>
+                    <div class="pagination-group" id="dlPagination" onclick="event.stopPropagation();"></div>
+                    <i class="bi bi-chevron-down section-chevron" id="downloadsChevron"></i>
                 </div>
             </div>
-            <div class="section-body">
-                <form id="downloadForm" onsubmit="submitDownload(event)">
-                    <div class="row g-2 align-items-end">
-                        <div class="col-md-6">
-                            <label for="downloadUrl" class="form-label">URL</label>
-                            <input type="url" class="form-control" id="downloadUrl" placeholder="https://..." required>
+            <div class="section-collapsible" id="downloadsContent">
+                <div class="section-body">
+                    <form id="downloadForm" onsubmit="submitDownload(event)">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-6">
+                                <label for="downloadUrl" class="form-label">URL</label>
+                                <input type="url" class="form-control" id="downloadUrl" placeholder="https://..." required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="downloadFilename" class="form-label">Filename <small class="text-muted">(optional)</small></label>
+                                <input type="text" class="form-control" id="downloadFilename" placeholder="custom-filename">
+                            </div>
+                            <div class="col-md-2">
+                                <button type="submit" class="btn btn-primary w-100" id="downloadBtn">
+                                    <i class="bi bi-download"></i> Download
+                                </button>
+                            </div>
                         </div>
-                        <div class="col-md-4">
-                            <label for="downloadFilename" class="form-label">Filename <small class="text-muted">(optional)</small></label>
-                            <input type="text" class="form-control" id="downloadFilename" placeholder="custom-filename">
-                        </div>
-                        <div class="col-md-2">
-                            <button type="submit" class="btn btn-primary w-100" id="downloadBtn">
-                                <i class="bi bi-download"></i> Download
-                            </button>
-                        </div>
+                    </form>
+                    <div id="recentDownloads" class="mt-3" style="display: none;">
+                        <div id="downloadsListContainer"></div>
                     </div>
-                </form>
-                <div id="recentDownloads" class="mt-3" style="display: none;">
-                    <div id="downloadsListContainer"></div>
                 </div>
             </div>
         </div>
 
         <!-- Queue Section -->
-        <div class="section-card">
-            <div class="section-header">
+        <div class="section-card" id="queueCard">
+            <div class="section-header collapsible" onclick="toggleSection('queue')">
                 <h3><i class="bi bi-list-ul"></i> Queue <span class="header-badge" id="queueCount">0</span></h3>
+                <i class="bi bi-chevron-down section-chevron" id="queueChevron"></i>
             </div>
-            <div class="queue-toolbar">
-                <div class="toolbar-left">
-                    <select class="form-select form-select-sm" id="filterStatus" style="width: 140px;">
-                        <option value="">All Statuses</option>
-                        <option value="pending">Pending</option>
-                        <option value="processing">Processing</option>
-                        <option value="moved">Moved</option>
-                        <option value="emby_pending">Emby Pending</option>
-                        <option value="completed">Completed</option>
-                        <option value="error">Error</option>
-                    </select>
-                    <input type="text" class="form-control form-control-sm" id="searchQuery" placeholder="Search code or actress" style="width: 180px;">
-                    <div class="form-check ms-1">
-                        <input class="form-check-input" type="checkbox" id="forceFreshMetadata" onchange="saveForceFreshSetting()">
-                        <label class="form-check-label" for="forceFreshMetadata" title="Bypass cache for metadata/emby actions">
-                            <i class="bi bi-lightning-charge" style="color:var(--accent)"></i> Fresh
-                        </label>
+            <div class="section-collapsible" id="queueContent">
+                <div class="queue-toolbar">
+                    <div class="toolbar-left">
+                        <select class="form-select form-select-sm" id="filterStatus" style="width: 140px;">
+                            <option value="">All Statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="processing">Processing</option>
+                            <option value="moved">Moved</option>
+                            <option value="emby_pending">Emby Pending</option>
+                            <option value="completed">Completed</option>
+                            <option value="error">Error</option>
+                        </select>
+                        <input type="text" class="form-control form-control-sm" id="searchQuery" placeholder="Search code or actress" style="width: 180px;">
+                        <div class="form-check ms-1">
+                            <input class="form-check-input" type="checkbox" id="forceFreshMetadata" onchange="saveForceFreshSetting()">
+                            <label class="form-check-label" for="forceFreshMetadata" title="Bypass cache for metadata/emby actions">
+                                <i class="bi bi-lightning-charge" style="color:var(--accent)"></i> Fresh
+                            </label>
+                        </div>
+                    </div>
+                    <div class="toolbar-right">
+                        <span class="page-info" id="queuePageInfo"></span>
+                        <div class="pagination-group" id="queuePagination"></div>
                     </div>
                 </div>
-                <div class="toolbar-right">
-                    <span class="page-info" id="queuePageInfo"></span>
-                    <div class="pagination-group" id="queuePagination"></div>
+                <div style="overflow: visible;">
+                    <table class="table table-hover queue-table mb-0">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Movie Code</th>
+                                <th>Actress</th>
+                                <th>Status</th>
+                                <th>Pipeline</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="queueTableBody">
+                            <tr><td colspan="7" class="text-center" style="color:var(--text-muted); padding:2rem;">Loading...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
-            </div>
-            <div style="overflow: visible;">
-                <table class="table table-hover queue-table mb-0">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Movie Code</th>
-                            <th>Actress</th>
-                            <th>Status</th>
-                            <th>Pipeline</th>
-                            <th>Created</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="queueTableBody">
-                        <tr><td colspan="7" class="text-center" style="color:var(--text-muted); padding:2rem;">Loading...</td></tr>
-                    </tbody>
-                </table>
             </div>
         </div>
 
@@ -647,6 +663,13 @@
 
             document.getElementById('filterStatus').addEventListener('change', () => { queueCurrentPage = 1; refreshQueue(); });
             document.getElementById('searchQuery').addEventListener('input', debounce(() => { queueCurrentPage = 1; refreshQueue(); }, 500));
+
+            // Restore collapsed sections from localStorage
+            ['downloads', 'queue'].forEach(section => {
+                if (localStorage.getItem(`section_${section}_collapsed`) === 'true') {
+                    setSectionCollapsed(section, true);
+                }
+            });
         });
 
         function saveForceFreshSetting() {
@@ -657,6 +680,29 @@
 
         function getForceFresh() {
             return document.getElementById('forceFreshMetadata').checked;
+        }
+
+        // Section collapse/expand
+        function toggleSection(section) {
+            const content = document.getElementById(`${section}Content`);
+            const isCollapsed = !content.classList.contains('hidden');
+            setSectionCollapsed(section, isCollapsed);
+            localStorage.setItem(`section_${section}_collapsed`, isCollapsed);
+        }
+
+        function setSectionCollapsed(section, collapsed) {
+            const content = document.getElementById(`${section}Content`);
+            const chevron = document.getElementById(`${section}Chevron`);
+            const card = document.getElementById(`${section}Card`);
+            if (collapsed) {
+                content.classList.add('hidden');
+                chevron.classList.add('collapsed');
+                card.classList.add('collapsed-card');
+            } else {
+                content.classList.remove('hidden');
+                chevron.classList.remove('collapsed');
+                card.classList.remove('collapsed-card');
+            }
         }
 
         // Auto-refresh
