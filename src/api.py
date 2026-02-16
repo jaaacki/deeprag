@@ -250,7 +250,8 @@ async def get_queue(
             cur.execute(f"""
                 SELECT id, file_path, movie_code, actress, subtitle, status,
                        error_message, new_path, emby_item_id, retry_count,
-                       created_at, updated_at
+                       created_at, updated_at,
+                       (metadata_json IS NOT NULL) as has_metadata
                 FROM processing_queue
                 {where_sql}
                 ORDER BY created_at DESC
@@ -272,6 +273,7 @@ async def get_queue(
                     "retry_count": row[9],
                     "created_at": row[10].isoformat() if row[10] else None,
                     "updated_at": row[11].isoformat() if row[11] else None,
+                    "has_metadata": bool(row[12]),
                 })
 
             # Get total count
