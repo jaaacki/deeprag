@@ -13,19 +13,29 @@ UNIFIED_SEARCH_ENDPOINT = '/search'
 class MetadataClient:
     """Client for the emby-service WP REST API."""
 
-    def __init__(self, base_url: str, token: str = '', search_order: list[str] | None = None):
+    def __init__(self, base_url: str, token: str = '', search_order: list[str] | None = None,
+                 token_manager=None):
         """Initialize metadata client.
 
         Args:
             base_url: WordPress API base URL
-            token: Authorization token
+            token: Authorization token (static fallback)
             search_order: DEPRECATED - no longer used, backend handles provider selection
+            token_manager: Optional TokenManager instance for auto-refreshing tokens
         """
         self.base_url = base_url.rstrip('/')
-        self.token = token
+        self._static_token = token
+        self._token_manager = token_manager
         # search_order kept for backwards compatibility but not used
         if search_order:
             logger.info('search_order parameter is deprecated - unified search handles provider selection')
+
+    @property
+    def token(self) -> str:
+        """Get the current token (from token_manager if available, else static)."""
+        if self._token_manager:
+            return self._token_manager.get_token()
+        return self._static_token
 
     def search(self, movie_code: str, fresh: bool = False) -> dict | None:
         """Search for movie metadata using unified endpoint.
@@ -57,6 +67,20 @@ class MetadataClient:
                 headers=headers,
                 timeout=30,
             )
+
+            # Handle 401 with token refresh + single retry
+            if resp.status_code == 401 and self._token_manager:
+                logger.warning('Got 401 for %s, attempting token refresh', movie_code)
+                self._token_manager.handle_401()
+                # Rebuild headers with new token
+                headers['Authorization'] = f'Bearer {self.token}'
+                resp = requests.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=30,
+                )
+
             resp.raise_for_status()
             body = resp.json()
 

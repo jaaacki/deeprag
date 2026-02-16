@@ -13,6 +13,7 @@ from src.log_buffer import get_log_buffer
 from src.metadata import MetadataClient
 from src.pipeline import Pipeline
 from src.queue import QueueDB
+from src.token_manager import TokenManager, load_refresh_token
 from src.watcher import start_watcher
 from src.workers import WorkerManager
 
@@ -79,29 +80,7 @@ def main():
     config = load_config()
     logger.info('Configuration loaded')
 
-    # Init metadata client
-    api_config = config.get('api', {})
-    metadata_client = MetadataClient(
-        base_url=api_config.get('base_url', ''),
-        token=api_config.get('token', ''),
-        search_order=api_config.get('search_order', ['missav', 'javguru']),
-    )
-
-    # Init Emby client
-    emby_config = config.get('emby', {})
-    emby_client = None
-    if emby_config.get('base_url') and emby_config.get('api_key'):
-        emby_client = EmbyClient(
-            base_url=emby_config['base_url'],
-            api_key=emby_config['api_key'],
-            parent_folder_id=emby_config.get('parent_folder_id', '4'),
-            user_id=emby_config.get('user_id', ''),
-            wordpress_token=api_config.get('token', ''),
-            retry_delays=emby_config.get('scan_retry_delays'),
-        )
-        logger.info('Emby client initialized (parent_folder_id=%s)', emby_config.get('parent_folder_id'))
-
-    # Init database
+    # Init database FIRST (needed by token manager)
     db_config = config.get('database', {})
     database_url = db_config.get('url', '')
     if database_url:
@@ -116,6 +95,48 @@ def main():
         )
     queue_db.initialize()
     logger.info('Queue database initialized')
+
+    # Init token manager for WordPress API auto-refresh
+    api_config = config.get('api', {})
+    token_manager = None
+    refresh_token = load_refresh_token()
+    if refresh_token:
+        refresh_url = api_config.get('base_url', '').replace(
+            '/wp-json/emby/v1', '/wp-json/api-bearer-auth/v1/tokens/refresh'
+        )
+        token_manager = TokenManager(
+            db_pool=queue_db._pool,
+            refresh_url=refresh_url,
+            refresh_token=refresh_token,
+            initial_access_token=api_config.get('token', ''),
+        )
+        token_manager.initialize()
+        logger.info('Token manager initialized')
+    else:
+        logger.warning('No refresh token found — token auto-refresh disabled')
+
+    # Init metadata client
+    metadata_client = MetadataClient(
+        base_url=api_config.get('base_url', ''),
+        token=api_config.get('token', ''),
+        search_order=api_config.get('search_order', ['missav', 'javguru']),
+        token_manager=token_manager,
+    )
+
+    # Init Emby client
+    emby_config = config.get('emby', {})
+    emby_client = None
+    if emby_config.get('base_url') and emby_config.get('api_key'):
+        emby_client = EmbyClient(
+            base_url=emby_config['base_url'],
+            api_key=emby_config['api_key'],
+            parent_folder_id=emby_config.get('parent_folder_id', '4'),
+            user_id=emby_config.get('user_id', ''),
+            wordpress_token=api_config.get('token', ''),
+            retry_delays=emby_config.get('scan_retry_delays'),
+            token_manager=token_manager,
+        )
+        logger.info('Emby client initialized (parent_folder_id=%s)', emby_config.get('parent_folder_id'))
 
     # Init worker manager
     worker_manager = WorkerManager(
@@ -169,9 +190,11 @@ def main():
         # Block until shutdown signal
         worker_manager.wait_for_shutdown()
     finally:
-        logger.info('Shutting down watcher...')
+        logger.info('Shutting down...')
         observer.stop()
         observer.join()
+        if token_manager:
+            token_manager.stop()
         queue_db.close()
         logger.info('Shutdown complete')
 

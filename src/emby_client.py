@@ -20,7 +20,8 @@ class EmbyClient:
     """Client for Emby server API operations."""
 
     def __init__(self, base_url: str, api_key: str, parent_folder_id: str = '',
-                 user_id: str = '', wordpress_token: str = '', retry_delays: list[int] | None = None):
+                 user_id: str = '', wordpress_token: str = '', retry_delays: list[int] | None = None,
+                 token_manager=None):
         """Initialize Emby client.
 
         Args:
@@ -28,15 +29,24 @@ class EmbyClient:
             api_key: Emby API token
             parent_folder_id: Parent folder ID for the main video library (e.g., '4')
             user_id: Emby user ID for API calls (required for item access)
-            wordpress_token: WordPress API token for downloading images (required for WordPress image URLs)
+            wordpress_token: WordPress API token for downloading images (static fallback)
             retry_delays: List of delay seconds for retry attempts. Defaults to [2,4,8,16,32,64].
+            token_manager: Optional TokenManager instance for auto-refreshing WordPress tokens
         """
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
         self.parent_folder_id = parent_folder_id
         self.user_id = user_id
-        self.wordpress_token = wordpress_token
+        self._static_wordpress_token = wordpress_token
+        self._token_manager = token_manager
         self.retry_delays = retry_delays if retry_delays is not None else DEFAULT_RETRY_DELAYS
+
+    @property
+    def wordpress_token(self) -> str:
+        """Get the current WordPress token (from token_manager if available, else static)."""
+        if self._token_manager:
+            return self._token_manager.get_token()
+        return self._static_wordpress_token
 
     def trigger_library_scan(self, path: str | None = None) -> bool:
         """Trigger Emby to scan the library.
@@ -432,6 +442,18 @@ class EmbyClient:
                 timeout=30,
                 allow_redirects=True,
             )
+
+            # Handle 401 with token refresh + single retry (WordPress URLs only)
+            if resp.status_code == 401 and self._token_manager and 'familyhub.id' in image_url:
+                logger.warning('Got 401 downloading image, attempting token refresh')
+                self._token_manager.handle_401()
+                headers['Authorization'] = f'Bearer {self.wordpress_token}'
+                resp = requests.get(
+                    image_url,
+                    headers=headers,
+                    timeout=30,
+                    allow_redirects=True,
+                )
 
             # WordPress media-crop endpoints return image data but with 404 status
             # Accept response if we got valid image data, regardless of status code

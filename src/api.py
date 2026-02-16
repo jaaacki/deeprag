@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .log_buffer import get_log_buffer
 from .queue import QueueDB
+from .token_manager import TokenManager, load_refresh_token
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,9 @@ app.add_middleware(
 
 # Global QueueDB instance (initialized on startup)
 queue_db: Optional[QueueDB] = None
+
+# Global TokenManager instance (initialized on startup)
+_token_manager: Optional[TokenManager] = None
 
 
 def get_queue_db() -> QueueDB:
@@ -80,6 +84,25 @@ async def startup_event():
     from .downloader import get_download_manager
     get_download_manager(queue_db=db)
 
+    # Initialize token manager
+    global _token_manager
+    refresh_token = load_refresh_token()
+    if refresh_token:
+        api_base_url = os.getenv('API_BASE_URL', '')
+        refresh_url = api_base_url.replace(
+            '/wp-json/emby/v1', '/wp-json/api-bearer-auth/v1/tokens/refresh'
+        )
+        _token_manager = TokenManager(
+            db_pool=db._pool,
+            refresh_url=refresh_url,
+            refresh_token=refresh_token,
+            initial_access_token=os.getenv('API_TOKEN', ''),
+        )
+        _token_manager.initialize()
+        logger.info("Token manager initialized in API process")
+    else:
+        logger.warning("No refresh token found — token auto-refresh disabled in API process")
+
     logger.info("=== FastAPI dashboard started ===")
     logger.info(f"Log buffer has {len(log_buffer.buffer)} entries")
     logger.info(f"Root logger handlers: {[type(h).__name__ for h in root_logger.handlers]}")
@@ -87,8 +110,11 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Close database connection on shutdown."""
-    global queue_db
+    """Close database connection and token manager on shutdown."""
+    global queue_db, _token_manager
+    if _token_manager:
+        _token_manager.stop()
+        _token_manager = None
     if queue_db:
         queue_db.close()
         queue_db = None
@@ -475,15 +501,10 @@ async def action_fetch_metadata(
             logger.info(f"[API Action] Fetching metadata for: {movie_code}{fresh_text}")
 
             # Fetch metadata
-            api_config = {
-                'base_url': os.getenv('API_BASE_URL', ''),
-                'token': os.getenv('API_TOKEN', ''),
-                'search_order': os.getenv('API_SEARCH_ORDER', 'missav,javguru').split(','),
-            }
             metadata_client = MetadataClient(
-                base_url=api_config['base_url'],
-                token=api_config['token'],
-                search_order=api_config['search_order'],
+                base_url=os.getenv('API_BASE_URL', ''),
+                token=os.getenv('API_TOKEN', ''),
+                token_manager=_token_manager,
             )
 
             metadata = metadata_client.search(movie_code, fresh=fresh)
@@ -676,13 +697,10 @@ async def action_update_emby(
             logger.info(f"[API Action] Fetching metadata for: {movie_code}{fresh_text}")
 
             # Fetch metadata (fresh or cached)
-            api_config = {
-                'base_url': os.getenv('API_BASE_URL', ''),
-                'token': os.getenv('API_TOKEN', ''),
-            }
             metadata_client = MetadataClient(
-                base_url=api_config['base_url'],
-                token=api_config['token'],
+                base_url=os.getenv('API_BASE_URL', ''),
+                token=os.getenv('API_TOKEN', ''),
+                token_manager=_token_manager,
             )
 
             metadata = metadata_client.search(movie_code, fresh=fresh)
@@ -720,7 +738,8 @@ async def action_update_emby(
                     api_key=emby_config['api_key'],
                     parent_folder_id=emby_config['parent_folder_id'],
                     user_id=emby_config['user_id'],
-                    wordpress_token=api_config['token'],
+                    wordpress_token=os.getenv('API_TOKEN', ''),
+                    token_manager=_token_manager,
                 )
 
                 logger.info(f"[API Action] Updating Emby metadata for item {item_id} (Emby ID: {emby_item_id})")
@@ -916,13 +935,10 @@ async def bulk_refresh_metadata(
         logger.info(f"[API Bulk] Found {len(items)} items to refresh")
 
         # Initialize metadata client with unified search
-        api_config = {
-            'base_url': os.getenv('API_BASE_URL', ''),
-            'token': os.getenv('API_TOKEN', ''),
-        }
         metadata_client = MetadataClient(
-            base_url=api_config['base_url'],
-            token=api_config['token'],
+            base_url=os.getenv('API_BASE_URL', ''),
+            token=os.getenv('API_TOKEN', ''),
+            token_manager=_token_manager,
         )
 
         updated_count = 0
@@ -969,7 +985,8 @@ async def bulk_refresh_metadata(
                             api_key=emby_config['api_key'],
                             parent_folder_id=emby_config['parent_folder_id'],
                             user_id=emby_config['user_id'],
-                            wordpress_token=api_config['token'],
+                            wordpress_token=os.getenv('API_TOKEN', ''),
+                            token_manager=_token_manager,
                         )
 
                         logger.info(f"[API Bulk] Updating Emby metadata for item {item_id} (Emby ID: {emby_item_id})")
