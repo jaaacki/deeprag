@@ -100,6 +100,13 @@ class DownloadManager:
                 results.append(result)
         return results, total
 
+    def retry(self, job_id: int) -> Optional[dict]:
+        """Retry a failed download by resubmitting the same URL/filename. Returns new job or None."""
+        row = self._queue_db.get_download(job_id)
+        if not row or row['status'] not in ('failed',):
+            return None
+        return self.submit(row['url'], row.get('filename'))
+
     def cancel(self, job_id: int) -> bool:
         """Cancel an active download. Returns True if cancelled, False if not active."""
         with self._lock:
