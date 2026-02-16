@@ -468,29 +468,35 @@ class QueueDB:
         finally:
             self._put_conn(conn)
 
+    _UNSET = object()  # sentinel for "don't update this field"
+
     def update_download_status(self, download_id: int, *,
-                               status: Optional[str] = None,
-                               error: Optional[str] = None,
-                               output_tail: Optional[list] = None,
-                               started_at: Optional[datetime] = None,
-                               finished_at: Optional[datetime] = None) -> Optional[dict]:
-        """Update a download job's status and fields. Returns updated row."""
+                               status: Optional[str] = _UNSET,
+                               error: Optional[str] = _UNSET,
+                               output_tail: Optional[list] = _UNSET,
+                               started_at: Optional[datetime] = _UNSET,
+                               finished_at: Optional[datetime] = _UNSET) -> Optional[dict]:
+        """Update a download job's status and fields. Returns updated row.
+
+        Pass None explicitly to set a field to NULL in the database.
+        Omit a field to leave it unchanged.
+        """
         fields = []
         values = []
 
-        if status is not None:
+        if status is not self._UNSET:
             fields.append('status = %s')
             values.append(status)
-        if error is not None:
+        if error is not self._UNSET:
             fields.append('error = %s')
             values.append(error)
-        if output_tail is not None:
+        if output_tail is not self._UNSET:
             fields.append('output_tail = %s')
-            values.append(json.dumps(output_tail))
-        if started_at is not None:
+            values.append(json.dumps(output_tail) if output_tail is not None else None)
+        if started_at is not self._UNSET:
             fields.append('started_at = %s')
             values.append(started_at)
-        if finished_at is not None:
+        if finished_at is not self._UNSET:
             fields.append('finished_at = %s')
             values.append(finished_at)
 

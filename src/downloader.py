@@ -101,11 +101,29 @@ class DownloadManager:
         return results, total
 
     def retry(self, job_id: int) -> Optional[dict]:
-        """Retry a failed download by resubmitting the same URL/filename. Returns new job or None."""
+        """Retry a failed download by resetting and re-running the same job in place."""
         row = self._queue_db.get_download(job_id)
         if not row or row['status'] not in ('failed',):
             return None
-        return self.submit(row['url'], row.get('filename'))
+
+        # Reset the job back to queued
+        self._queue_db.update_download_status(
+            job_id, status='queued', error=None,
+            started_at=None, finished_at=None, output_tail=[],
+        )
+
+        url = row['url']
+        filename = row.get('filename')
+
+        with self._lock:
+            self._active_output[job_id] = []
+
+        thread = threading.Thread(target=self._run_download, args=(job_id, url, filename), daemon=True)
+        thread.start()
+        logger.info(f"[Download] Retrying job {job_id}: {url}")
+
+        updated = self._queue_db.get_download(job_id)
+        return _row_to_dict(updated) if updated else None
 
     def cancel(self, job_id: int) -> bool:
         """Cancel an active download. Returns True if cancelled, False if not active."""

@@ -1244,11 +1244,11 @@ async def retry_download(job_id: int):
     from .downloader import get_download_manager
 
     manager = get_download_manager()
-    new_job = manager.retry(job_id)
-    if not new_job:
+    job = manager.retry(job_id)
+    if not job:
         raise HTTPException(status_code=400, detail="Download not found or not in failed state")
-    logger.info(f"[API] Download retried: old={job_id} new={new_job['id']}")
-    return {"success": True, "message": f"Download resubmitted (job {new_job['id']})", "job": new_job}
+    logger.info(f"[API] Download retried: job={job_id}")
+    return {"success": True, "message": f"Download retrying (job {job_id})", "job": job}
 
 
 @app.post("/api/downloads/{job_id}/cancel")
