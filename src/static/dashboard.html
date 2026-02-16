@@ -492,7 +492,7 @@
                     return `
                     <tr>
                         <td><code>${item.id}</code></td>
-                        <td><strong>${item.movie_code || '-'}</strong></td>
+                        <td><strong>${item.movie_code || '-'}</strong><br><small class="text-muted text-truncate d-inline-block" style="max-width:180px;" title="${escapeHtml(getFilename(item))}">${escapeHtml(getFilename(item))}</small></td>
                         <td>${item.actress || '-'}</td>
                         <td>${getStatusBadge(item.status)}</td>
                         <td>${getPipelineProgress(hasCode, hasMeta, hasPath, hasEmby)}</td>
@@ -1031,6 +1031,12 @@
                 'failed': '<span class="badge bg-danger">failed</span>',
             };
             return map[status] || `<span class="badge bg-secondary">${status}</span>`;
+        }
+
+        // Extract filename from path (prefer new_path, fallback to file_path)
+        function getFilename(item) {
+            const path = item.new_path || item.file_path || '';
+            return path.split('/').pop() || '-';
         }
 
         // Pipeline progress indicator
