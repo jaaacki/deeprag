@@ -979,6 +979,63 @@ async def delete_queue_item(item_id: int):
         db._put_conn(conn)
 
 
+@app.delete("/api/queue/{item_id}/file")
+async def delete_queue_item_and_file(item_id: int):
+    """Delete a queue item AND its associated file from disk.
+
+    Deletes new_path (destination) if set, otherwise file_path (source).
+    Also removes the queue record.
+    """
+    import os
+    logger.info(f"[API Action] Delete file+queue requested for item {item_id}")
+    db = get_queue_db()
+    conn = db._get_conn()
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT file_path, new_path, status FROM processing_queue WHERE id = %s",
+                (item_id,)
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Item not found")
+
+            file_path, new_path, status = row
+            target = new_path if new_path else file_path
+
+            logger.info(f"[API Action] Deleting file for item {item_id}: {target} (status: {status})")
+
+            # Delete file from disk using direct filesystem call
+            file_deleted = False
+            if target and os.path.exists(target):
+                os.unlink(target)
+                file_deleted = True
+                logger.info(f"[API Action] File deleted: {target}")
+            else:
+                logger.warning(f"[API Action] File not found on disk: {target}")
+
+            # Remove queue record regardless
+            cur.execute("DELETE FROM processing_queue WHERE id = %s", (item_id,))
+            conn.commit()
+
+            return {
+                "success": True,
+                "message": f"{'Deleted file and removed' if file_deleted else 'File not found, removed'} item {item_id} from queue",
+                "item_id": item_id,
+                "file_deleted": file_deleted,
+                "file_path": target,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.exception(f"[API Action] Failed to delete file for item {item_id}")
+        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
+    finally:
+        db._put_conn(conn)
+
+
 @app.post("/api/cleanup")
 async def cleanup(older_than_days: int = Query(30, ge=1, le=365)):
     """Delete completed items older than specified days (queue + downloads)."""
