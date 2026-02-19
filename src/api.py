@@ -1007,8 +1007,11 @@ async def delete_queue_item_and_file(item_id: int):
             logger.info(f"[API Action] Deleting file for item {item_id}: {target} (status: {status})")
 
             # Delete file from disk using direct filesystem call
+            # os.unlink() cannot delete directories, but guard with isfile() to be explicit
             file_deleted = False
-            if target and os.path.exists(target):
+            if target and os.path.isdir(target):
+                raise HTTPException(status_code=400, detail=f"Path is a directory, refusing to delete: {target}")
+            elif target and os.path.isfile(target):
                 os.unlink(target)
                 file_deleted = True
                 logger.info(f"[API Action] File deleted: {target}")
