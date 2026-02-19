@@ -981,7 +981,10 @@
                                         </a></li>
                                         <li><hr class="dropdown-divider"></li>
                                         <li><a class="dropdown-item" href="#" onclick="deleteItem(${item.id}, event)" style="color:var(--red)">
-                                            <i class="bi bi-trash me-2"></i>Delete
+                                            <i class="bi bi-trash me-2"></i>Delete Queue
+                                        </a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="deleteItemAndFile(${item.id}, ${JSON.stringify(item.new_path || item.file_path)}, event)" style="color:var(--red)">
+                                            <i class="bi bi-file-earmark-x me-2"></i>Delete File
                                         </a></li>
                                     </ul>
                                 </div>
@@ -1207,6 +1210,25 @@
                 const result = await response.json();
                 if (result.success) { showToast(result.message || 'Item deleted', 'success'); setTimeout(() => refreshData(), 500); }
                 else showToast(result.message || 'Delete failed', 'error');
+            } catch (error) { showToast(`Error: ${error.message}`, 'error'); }
+        }
+
+        // Delete item AND file from disk
+        async function deleteItemAndFile(itemId, filePath, event) {
+            if (event) event.preventDefault();
+            if (!confirm(`Delete item ${itemId} AND its file from disk?\n\nFile: ${filePath || '(unknown)'}\n\nThis cannot be undone.`)) {
+                showToast('Delete cancelled', 'info'); return;
+            }
+            showToast('Deleting file...', 'info');
+            try {
+                const response = await fetch(`${API_BASE}/api/queue/${itemId}/file`, { method: 'DELETE' });
+                if (!response.ok) { const error = await response.json(); throw new Error(error.detail || 'Delete failed'); }
+                const result = await response.json();
+                if (result.success) {
+                    const msg = result.file_deleted ? `File deleted: ${result.file_path}` : `Queue removed (file not found on disk)`;
+                    showToast(msg, result.file_deleted ? 'success' : 'warning');
+                    setTimeout(() => refreshData(), 500);
+                } else showToast(result.message || 'Delete failed', 'error');
             } catch (error) { showToast(`Error: ${error.message}`, 'error'); }
         }
 
